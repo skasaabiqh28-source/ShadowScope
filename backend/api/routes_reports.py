@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.database.connection import get_db
-from backend.database.models import Report, Scan, Finding, Project
+from backend.database.models import Report, Scan, Finding, Project, RetestHistory
 from backend.schemas.api_schemas import (
     ReportGenerateRequest,
     ReportResponse,
@@ -54,6 +54,28 @@ async def list_reports(scan_id: str = None, db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/{report_id}", response_model=ReportResponse)
+async def get_report(report_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Fetches details and download link for a specific report.
+    """
+    res = await db.execute(select(Report).where(Report.id == report_id))
+    r = res.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    return ReportResponse(
+        id=r.id,
+        scan_id=r.scan_id,
+        title=r.title,
+        format=r.report_format,
+        file_path=r.file_path,
+        download_url=f"/api/reports/download/{os.path.basename(r.file_path)}",
+        generated_at=r.generated_at,
+    )
+
+
+
 @router.post("", response_model=ReportResponse)
 async def create_report(payload: ReportGenerateRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -70,16 +92,24 @@ async def create_report(payload: ReportGenerateRequest, db: AsyncSession = Depen
     f_res = await db.execute(select(Finding).where(Finding.scan_id == scan.id))
     findings = f_res.scalars().all()
 
+    finding_ids = [f.id for f in findings]
+    retests = []
+    if finding_ids:
+        r_res = await db.execute(
+            select(RetestHistory).where(RetestHistory.finding_id.in_(finding_ids))
+        )
+        retests = r_res.scalars().all()
+
     fmt = payload.format.lower()
     title = payload.title or f"Security Assessment Report - {project.name if project else scan.target_value}"
 
     if fmt == "pdf":
-        file_path = generate_pdf_report(scan, project, findings)
+        file_path = generate_pdf_report(scan, project, findings, retests)
     elif fmt == "json":
-        file_path = generate_json_report(scan, project, findings)
+        file_path = generate_json_report(scan, project, findings, retests)
     else:
         fmt = "html"
-        file_path = generate_html_report(scan, project, findings)
+        file_path = generate_html_report(scan, project, findings, retests)
 
     report_row = Report(
         scan_id=scan.id,

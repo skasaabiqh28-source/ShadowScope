@@ -1,29 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Shield,
-  AlertTriangle,
-  Activity,
+  Terminal,
   Play,
   History,
-  CheckCircle2,
-  ExternalLink,
+  AlertTriangle,
   Cpu,
-  Layers,
   ArrowUpRight,
+  RefreshCw,
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from 'recharts';
-import { DashboardMetrics, Scan, Finding } from '../types';
+import { DashboardMetrics } from '../types';
 import { api } from '../services/api';
+import { TerminalPane } from '../components/TerminalPane';
+import { AsciiBar } from '../components/AsciiBar';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
+import { EmptyState } from '../components/EmptyState';
 
 interface Props {
   onNavigate: (route: string, param?: string) => void;
@@ -49,320 +40,407 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 10000); // refresh every 10s
+    const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
   }, []);
 
   if (loading && !metrics) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-400">
-        <Activity className="w-6 h-6 animate-spin mr-2 text-blue-500" />
-        <span>Loading security metrics...</span>
+      <div className="space-y-4 font-mono text-xs text-[#33ff00]">
+        <TerminalPane title="SYS_INIT" prefix="BOOT">
+          <div className="flex items-center space-x-2 py-8 justify-center">
+            <span className="text-[#33ff00] animate-pulse">&gt; QUERYING_STRIX_TELEMETRY...</span>
+            <span className="cursor-block" />
+          </div>
+        </TerminalPane>
       </div>
     );
   }
 
   if (error && !metrics) {
     return (
-      <div className="p-6 bg-red-950/30 border border-red-800/50 rounded-lg text-red-300">
-        <div className="font-semibold mb-1">Failed to load dashboard</div>
-        <div className="text-sm">{error}</div>
-      </div>
+      <TerminalPane title="COMM_FAILURE" error={true} prefix="ERR">
+        <div className="p-4 text-center space-y-3">
+          <div className="text-[#ff3333] font-bold text-sm tracking-wider uppercase">
+            [!] CONNECTION_FAILED: CANNOT_REACH_BACKEND_DAEMON
+          </div>
+          <p className="text-xs text-[#94a3b8] max-w-md mx-auto">{error}</p>
+          <button
+            onClick={loadData}
+            className="btn-terminal-danger mt-2"
+          >
+            [ RETRY_HANDSHAKE ]
+          </button>
+        </div>
+      </TerminalPane>
     );
   }
 
-  const chartData = [
-    { name: 'Critical', count: metrics?.critical_findings || 0, color: '#ef4444' },
-    { name: 'High', count: metrics?.high_findings || 0, color: '#f97316' },
-    { name: 'Medium', count: metrics?.medium_findings || 0, color: '#eab308' },
-    { name: 'Low', count: metrics?.low_findings || 0, color: '#3b82f6' },
-    { name: 'Info', count: metrics?.info_findings || 0, color: '#64748b' },
-  ];
+  const totalFindings = metrics?.open_findings || 0;
+  const maxFindings = Math.max(
+    totalFindings,
+    metrics?.critical_findings || 0,
+    metrics?.high_findings || 0,
+    metrics?.medium_findings || 0,
+    1
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#111726] border border-[#1d273a] p-5 rounded-xl">
-        <div>
-          <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-400" />
-            Security Overview
-          </h2>
-          <p className="text-sm text-gray-400 mt-1">
-            Real-time vulnerability metrics and Strix penetration testing engine status.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2.5">
+    <div className="space-y-4 font-mono text-xs">
+      {/* Top Banner Pane */}
+      <TerminalPane
+        title="SYSTEM_OVERVIEW"
+        prefix="ROOT"
+        headerAction={
           <button
-            onClick={() => onNavigate('new-scan')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-blue-600/20"
+            onClick={loadData}
+            title="Refresh metrics"
+            className="text-[#1f521f] hover:text-[#33ff00] transition-colors"
           >
-            <Play className="w-4 h-4 fill-current" />
-            New Security Scan
+            [&circlearrowright; SYNC]
           </button>
-          <button
-            onClick={() => onNavigate('findings')}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1b2333] hover:bg-[#232d42] text-gray-200 text-sm font-medium rounded-lg border border-[#2d3a52] transition-colors"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            View Findings
-          </button>
-          <button
-            onClick={() => onNavigate('history')}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1b2333] hover:bg-[#232d42] text-gray-200 text-sm font-medium rounded-lg border border-[#2d3a52] transition-colors"
-          >
-            <History className="w-4 h-4 text-gray-400" />
-            Scan History
-          </button>
-        </div>
-      </div>
-
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Total Scans</div>
-          <div className="text-2xl font-bold text-gray-100 mt-2">{metrics?.total_scans || 0}</div>
-          <div className="text-[11px] text-gray-500 mt-1">{metrics?.completed_scans || 0} completed</div>
-        </div>
-
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs font-medium text-blue-400 uppercase tracking-wider">Active Scans</div>
-          <div className="text-2xl font-bold text-blue-400 mt-2 flex items-center gap-2">
-            {metrics?.active_scans || 0}
-            {(metrics?.active_scans || 0) > 0 && (
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping" />
-            )}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-1">Strix executing</div>
-        </div>
-
-        <div className="bg-[#111726] border border-red-900/40 p-4 rounded-lg bg-red-950/10">
-          <div className="text-xs font-medium text-red-400 uppercase tracking-wider">Critical</div>
-          <div className="text-2xl font-bold text-red-400 mt-2">{metrics?.critical_findings || 0}</div>
-          <div className="text-[11px] text-red-400/70 mt-1">Immediate action</div>
-        </div>
-
-        <div className="bg-[#111726] border border-orange-900/40 p-4 rounded-lg bg-orange-950/10">
-          <div className="text-xs font-medium text-orange-400 uppercase tracking-wider">High</div>
-          <div className="text-2xl font-bold text-orange-400 mt-2">{metrics?.high_findings || 0}</div>
-          <div className="text-[11px] text-orange-400/70 mt-1">High priority</div>
-        </div>
-
-        <div className="bg-[#111726] border border-amber-900/40 p-4 rounded-lg bg-amber-950/10">
-          <div className="text-xs font-medium text-amber-400 uppercase tracking-wider">Medium</div>
-          <div className="text-2xl font-bold text-amber-400 mt-2">{metrics?.medium_findings || 0}</div>
-          <div className="text-[11px] text-amber-400/70 mt-1">Moderate risk</div>
-        </div>
-
-        <div className="bg-[#111726] border border-blue-900/40 p-4 rounded-lg bg-blue-950/10">
-          <div className="text-xs font-medium text-blue-400 uppercase tracking-wider">Low / Info</div>
-          <div className="text-2xl font-bold text-blue-400 mt-2">
-            {(metrics?.low_findings || 0) + (metrics?.info_findings || 0)}
-          </div>
-          <div className="text-[11px] text-blue-400/70 mt-1">Hardening advice</div>
-        </div>
-      </div>
-
-      {/* Chart and System Health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Severity Distribution Bar Chart */}
-        <div className="lg:col-span-2 bg-[#111726] border border-[#1d273a] p-5 rounded-xl">
-          <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center justify-between">
-            <span>Severity Distribution</span>
-            <span className="text-xs font-normal text-gray-400">Total Findings: {metrics?.open_findings || 0}</span>
-          </h3>
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} />
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0d121c', borderColor: '#2b3850', color: '#f3f4f6', borderRadius: '8px' }}
-                />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Engine & Provider Status Card */}
-        <div className="bg-[#111726] border border-[#1d273a] p-5 rounded-xl flex flex-col justify-between">
+        }
+      >
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-blue-400" />
-              Engine & AI Telemetry
-            </h3>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between items-center py-1.5 border-b border-[#1d273a]">
-                <span className="text-gray-400">Strix CLI Version:</span>
-                <span className="font-mono text-gray-200">1.6.2</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-[#1d273a]">
-                <span className="text-gray-400">Docker Sandbox:</span>
-                <span className={metrics?.docker_running ? 'text-emerald-400 font-medium' : 'text-red-400 font-medium'}>
-                  {metrics?.docker_running ? 'Running' : 'Offline'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-[#1d273a]">
-                <span className="text-gray-400">Primary Provider:</span>
-                <span className="text-cyan-300 font-mono">Gemini (3.8-flash)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-[#1d273a]">
-                <span className="text-gray-400">Fallback Provider:</span>
-                <span className="text-purple-300 font-mono">Ollama (llama3.2)</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5">
-                <span className="text-gray-400">Failover Mode:</span>
-                <span className="px-2 py-0.5 rounded text-[11px] bg-blue-950 text-blue-300 border border-blue-800">
-                  {metrics?.provider_status?.mode || 'AUTO'}
-                </span>
-              </div>
+            <div className="text-[#33ff00] font-bold text-sm tracking-wider uppercase terminal-glow flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-[#33ff00]" />
+              SHADOWSCOPE // STRIX TELEMETRY CONSOLE
             </div>
+            <p className="text-[11px] text-[#94a3b8] mt-1">
+              Autonomous penetration testing, vulnerability correlation, and AI-assisted remediations.
+            </p>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#1d273a]">
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => onNavigate('settings')}
-              className="w-full text-center text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              onClick={() => onNavigate('new-scan')}
+              className="btn-terminal font-bold"
             >
-              Configure engine & providers &rarr;
+              [+ INITIATE_SCAN]
+            </button>
+            <button
+              onClick={() => onNavigate('findings')}
+              className="btn-terminal"
+            >
+              [? FINDINGS_LEDGER]
+            </button>
+            <button
+              onClick={() => onNavigate('history')}
+              className="btn-terminal"
+            >
+              [# SCAN_HISTORY]
             </button>
           </div>
         </div>
+      </TerminalPane>
+
+      {/* Primary KPI Metrics Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+        {/* Total Scans */}
+        <div className="border border-[#1f521f] bg-black p-3 select-none">
+          <div className="text-[10px] text-[#94a3b8] uppercase tracking-wider">TOTAL_SCANS</div>
+          <div className="text-xl font-bold text-[#33ff00] mt-1 terminal-glow">
+            {metrics?.total_scans || 0}
+          </div>
+          <div className="text-[10px] text-[#1f521f] mt-1">
+            [{metrics?.completed_scans || 0} COMPLETED]
+          </div>
+        </div>
+
+        {/* Active Scans */}
+        <div className={`border p-3 select-none bg-black ${
+          (metrics?.active_scans || 0) > 0 ? 'border-[#33ff00] animate-pulse' : 'border-[#1f521f]'
+        }`}>
+          <div className="text-[10px] text-[#33ff00] uppercase tracking-wider">ACTIVE_SCANS</div>
+          <div className="text-xl font-bold text-[#33ff00] mt-1 flex items-center gap-2">
+            {metrics?.active_scans || 0}
+            {(metrics?.active_scans || 0) > 0 && <span className="cursor-block" />}
+          </div>
+          <div className="text-[10px] text-[#1f521f] mt-1">[STRIX_EXEC]</div>
+        </div>
+
+        {/* Critical */}
+        <div className="border border-[#ff3333] bg-black p-3 select-none">
+          <div className="text-[10px] text-[#ff3333] uppercase tracking-wider">CRITICAL</div>
+          <div className="text-xl font-bold text-[#ff3333] mt-1 error-glow">
+            {metrics?.critical_findings || 0}
+          </div>
+          <div className="text-[10px] text-[#ff3333]/70 mt-1">[IMMEDIATE_ACTION]</div>
+        </div>
+
+        {/* High */}
+        <div className="border border-[#ffb000] bg-black p-3 select-none">
+          <div className="text-[10px] text-[#ffb000] uppercase tracking-wider">HIGH</div>
+          <div className="text-xl font-bold text-[#ffb000] mt-1 amber-glow">
+            {metrics?.high_findings || 0}
+          </div>
+          <div className="text-[10px] text-[#ffb000]/70 mt-1">[PRIORITY_PATCH]</div>
+        </div>
+
+        {/* Medium */}
+        <div className="border border-[#ffb000]/60 bg-black p-3 select-none">
+          <div className="text-[10px] text-[#ffb000] uppercase tracking-wider">MEDIUM</div>
+          <div className="text-xl font-bold text-[#ffb000] mt-1">
+            {metrics?.medium_findings || 0}
+          </div>
+          <div className="text-[10px] text-[#1f521f] mt-1">[MODERATE_RISK]</div>
+        </div>
+
+        {/* Low / Info */}
+        <div className="border border-[#1f521f] bg-black p-3 select-none">
+          <div className="text-[10px] text-[#94a3b8] uppercase tracking-wider">LOW / INFO</div>
+          <div className="text-xl font-bold text-[#33ff00] mt-1">
+            {(metrics?.low_findings || 0) + (metrics?.info_findings || 0)}
+          </div>
+          <div className="text-[10px] text-[#1f521f] mt-1">[HARDENING]</div>
+        </div>
       </div>
 
-      {/* Recent Scans Table */}
-      <div className="bg-[#111726] border border-[#1d273a] rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-[#1d273a] flex justify-between items-center">
-          <h3 className="text-sm font-semibold text-gray-200">Recent Scans</h3>
+      {/* Grid: Severity ASCII Breakdown & Engine Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Severity ASCII Distribution Pane */}
+        <TerminalPane
+          title="SEVERITY_DISTRIBUTION"
+          prefix="DATA"
+          className="lg:col-span-2"
+          headerAction={
+            <span className="text-[11px] text-[#94a3b8]">
+              OPEN_FINDINGS: [{totalFindings}]
+            </span>
+          }
+        >
+          <div className="space-y-3 py-1">
+            <AsciiBar
+              label="CRITICAL"
+              value={metrics?.critical_findings || 0}
+              max={maxFindings}
+              variant="red"
+              showValue={true}
+              length={24}
+            />
+            <AsciiBar
+              label="HIGH"
+              value={metrics?.high_findings || 0}
+              max={maxFindings}
+              variant="amber"
+              showValue={true}
+              length={24}
+            />
+            <AsciiBar
+              label="MEDIUM"
+              value={metrics?.medium_findings || 0}
+              max={maxFindings}
+              variant="amber"
+              showValue={true}
+              length={24}
+            />
+            <AsciiBar
+              label="LOW"
+              value={metrics?.low_findings || 0}
+              max={maxFindings}
+              variant="green"
+              showValue={true}
+              length={24}
+            />
+            <AsciiBar
+              label="INFO"
+              value={metrics?.info_findings || 0}
+              max={maxFindings}
+              variant="muted"
+              showValue={true}
+              length={24}
+            />
+          </div>
+          <div className="mt-4 pt-2 border-t border-[#1f521f] text-[10px] text-[#1f521f] flex justify-between">
+            <span>FORMAT: ASCII_METRIC_GAUGE</span>
+            <span>RATIO: (COUNT / TOTAL_VULNS)</span>
+          </div>
+        </TerminalPane>
+
+        {/* Engine Telemetry Pane */}
+        <TerminalPane
+          title="STRIX_CORE_TELEMETRY"
+          prefix="SYS"
+          footer={
+            <button
+              onClick={() => onNavigate('settings')}
+              className="hover:text-[#33ff00] text-[#94a3b8] transition-colors"
+            >
+              &gt; GOTO_CONFIG_SETTINGS_
+            </button>
+          }
+        >
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between items-center py-1 border-b border-[#1f521f]/50">
+              <span className="text-[#94a3b8]">STRIX_VERSION:</span>
+              <span className="text-[#33ff00] font-bold">1.6.2</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-[#1f521f]/50">
+              <span className="text-[#94a3b8]">SANDBOX:</span>
+              <span className={metrics?.docker_running ? 'text-[#33ff00] font-bold' : 'text-[#ffb000]'}>
+                {metrics?.docker_running ? '[ACTIVE]' : '[STANDALONE]'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-[#1f521f]/50">
+              <span className="text-[#94a3b8]">ACTIVE_LLM:</span>
+              <span className="text-[#33ff00] font-bold">
+                {metrics?.provider_status?.active_provider || 'GEMINI'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-[#1f521f]/50">
+              <span className="text-[#94a3b8]">FAILOVER_MODE:</span>
+              <span className="text-[#ffb000] font-bold">
+                [{metrics?.provider_status?.mode || 'AUTO'}]
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1">
+              <span className="text-[#94a3b8]">LOCAL_FALLBACK:</span>
+              <span className="text-[#94a3b8]">Ollama (llama3.2)</span>
+            </div>
+          </div>
+        </TerminalPane>
+      </div>
+
+      {/* Recent Scans Pane */}
+      <TerminalPane
+        title="RECENT_EXECUTIONS"
+        prefix="RUNS"
+        headerAction={
           <button
             onClick={() => onNavigate('history')}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+            className="text-[11px] text-[#33ff00] hover:underline"
           >
-            All scans <ArrowUpRight className="w-3 h-3" />
+            [ALL_SCANS &rarr;]
           </button>
-        </div>
-
+        }
+      >
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#0e1320] text-gray-400 border-b border-[#1d273a]">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="bg-[#050c05] text-[#1f521f] border-b border-[#1f521f]">
               <tr>
-                <th className="py-3 px-4">Target</th>
-                <th className="py-3 px-4">Mode</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Findings</th>
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-2 px-3 font-bold">TARGET_URI_OR_PATH</th>
+                <th className="py-2 px-3 font-bold">SCAN_MODE</th>
+                <th className="py-2 px-3 font-bold">STATUS</th>
+                <th className="py-2 px-3 font-bold">FINDINGS</th>
+                <th className="py-2 px-3 font-bold">TIMESTAMP</th>
+                <th className="py-2 px-3 font-bold text-right">ACTION</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1d273a] text-gray-300">
+            <tbody className="divide-y divide-[#1f521f]/50">
               {metrics?.recent_scans && metrics.recent_scans.length > 0 ? (
                 metrics.recent_scans.map((s) => (
-                  <tr key={s.id} className="hover:bg-[#151c2d] transition-colors">
-                    <td className="py-3 px-4 font-mono text-gray-200 max-w-xs truncate" title={s.target_value}>
+                  <tr key={s.id} className="hover:bg-[#0d220d]/50 transition-colors">
+                    <td className="py-2 px-3 text-[#33ff00] max-w-xs truncate" title={s.target_value}>
                       {s.target_value}
                     </td>
-                    <td className="py-3 px-4 uppercase text-[11px] font-medium text-gray-400">
-                      {s.scan_mode}
+                    <td className="py-2 px-3 uppercase text-[11px] text-[#94a3b8]">
+                      [{s.scan_mode}]
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-2 px-3">
                       <StatusBadge status={s.status} />
                     </td>
-                    <td className="py-3 px-4 font-semibold text-gray-200">
+                    <td className="py-2 px-3 font-bold text-[#33ff00]">
                       {s.findings_count}
                     </td>
-                    <td className="py-3 px-4 text-gray-400">
-                      {s.start_time ? new Date(s.start_time).toLocaleDateString() : '—'}
+                    <td className="py-2 px-3 text-[#94a3b8] text-[11px]">
+                      {s.start_time ? new Date(s.start_time).toISOString().replace('T', ' ').substring(0, 16) : '—'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-2 px-3 text-right">
                       <button
                         onClick={() => onNavigate(`scans/${s.id}`)}
-                        className="text-blue-400 hover:text-blue-300 font-medium"
+                        className="btn-terminal text-[10px] py-0.5 px-2"
                       >
-                        Monitor / View
+                        [MONITOR]
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-500">
-                    No scans recorded yet. Click "New Security Scan" to begin.
+                  <td colSpan={6} className="py-4">
+                    <EmptyState
+                      title="NO_ACTIVE_SCANS_FOUND"
+                      description="Initiate an automated penetration test against a local code repository or network target."
+                      actionText="INITIATE_SCAN"
+                      onAction={() => onNavigate('new-scan')}
+                    />
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </TerminalPane>
 
       {/* Recently Discovered Findings */}
-      <div className="bg-[#111726] border border-[#1d273a] rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-[#1d273a] flex justify-between items-center">
-          <h3 className="text-sm font-semibold text-gray-200">Recently Discovered Findings</h3>
+      <TerminalPane
+        title="VULNERABILITY_FEED"
+        prefix="ALERT"
+        headerAction={
           <button
             onClick={() => onNavigate('findings')}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+            className="text-[11px] text-[#33ff00] hover:underline"
           >
-            All findings <ArrowUpRight className="w-3 h-3" />
+            [FULL_LEDGER &rarr;]
           </button>
-        </div>
-
+        }
+      >
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#0e1320] text-gray-400 border-b border-[#1d273a]">
+          <table className="w-full text-left text-xs font-mono" aria-label="Recent Vulnerabilities">
+            <thead className="bg-[#050c05] text-[#1f521f] border-b border-[#1f521f]">
               <tr>
-                <th className="py-3 px-4">Severity</th>
-                <th className="py-3 px-4">Title</th>
-                <th className="py-3 px-4">Category</th>
-                <th className="py-3 px-4">Location</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-2 px-3 font-bold">SEVERITY</th>
+                <th className="py-2 px-3 font-bold">ADVISORY_TITLE</th>
+                <th className="py-2 px-3 font-bold">CATEGORY</th>
+                <th className="py-2 px-3 font-bold">LOCATION</th>
+                <th className="py-2 px-3 font-bold">STATUS</th>
+                <th className="py-2 px-3 font-bold text-right">ACTION</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1d273a] text-gray-300">
+            <tbody className="divide-y divide-[#1f521f]/50">
               {metrics?.recent_findings && metrics.recent_findings.length > 0 ? (
                 metrics.recent_findings.map((f) => (
-                  <tr key={f.id} className="hover:bg-[#151c2d] transition-colors">
-                    <td className="py-3 px-4">
+                  <tr key={f.id} className="hover:bg-[#0d220d]/50 transition-colors">
+                    <td className="py-2 px-3">
                       <SeverityBadge severity={f.severity} size="sm" />
                     </td>
-                    <td className="py-3 px-4 font-medium text-gray-100 max-w-sm truncate" title={f.title}>
+                    <td className="py-2 px-3 text-[#33ff00] max-w-sm truncate" title={f.title}>
                       {f.title}
                     </td>
-                    <td className="py-3 px-4 text-gray-400">{f.category}</td>
-                    <td className="py-3 px-4 font-mono text-gray-400 max-w-xs truncate" title={f.location || ''}>
+                    <td className="py-2 px-3 text-[#94a3b8] text-[11px]">{f.category}</td>
+                    <td className="py-2 px-3 text-[#1f521f] text-[11px] max-w-xs truncate" title={f.location || ''}>
                       {f.location || '—'}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-2 px-3">
                       <StatusBadge status={f.status} />
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-2 px-3 text-right">
                       <button
                         onClick={() => onNavigate(`findings/${f.id}`)}
-                        className="text-blue-400 hover:text-blue-300 font-medium"
+                        className="btn-terminal text-[10px] py-0.5 px-2"
                       >
-                        Inspect
+                        [INSPECT]
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-500">
-                    No findings discovered yet.
+                  <td colSpan={6} className="py-4">
+                    <EmptyState
+                      title="ZERO_VULNERABILITIES_REPORTED"
+                      description="No confirmed vulnerabilities recorded in system database. Run a scan to discover threats."
+                    />
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </TerminalPane>
     </div>
   );
 };
+
+export default Dashboard;

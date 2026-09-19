@@ -58,6 +58,7 @@ export interface Finding {
   id: string;
   scan_id: string;
   project_id?: string;
+  target?: string;
   title: string;
   severity: SeverityLevel;
   category: string;
@@ -204,4 +205,7 @@ export interface SystemSettings {
   gemini_model: string;
   ollama_url: string;
   ollama_model: string;
+  default_scan_mode?: string;
+  default_max_budget?: number;
+  default_max_turns?: number;
 }

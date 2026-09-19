@@ -1,0 +1,35 @@
+# ============================================================
+# ShadowScopeAI — Render Blueprint
+# https://docs.render.com/blueprint-spec
+# ============================================================
+# Deploy with one click: connect this repo to Render and it
+# auto-configures from this file.
+# ============================================================
+
+services:
+  - type: web
+    name: shadowscopeai
+    runtime: python
+    plan: free
+
+    # Build: install Python deps + build React frontend
+    buildCommand: "chmod +x build.sh && ./build.sh"
+
+    # Start: Uvicorn reads $PORT from Render automatically
+    startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+
+    # Health check — Render pings this to verify the service is alive
+    healthCheckPath: /api/health
+
+    # Environment variables
+    envVars:
+      - key: RENDER
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.13.15"
+      - key: NODE_VERSION
+        value: "20.18.3"
+      - key: LLM_PROVIDER_MODE
+        value: "GEMINI"
+      - key: GEMINI_API_KEY
+        sync: false  # User sets this manually in Render dashboard

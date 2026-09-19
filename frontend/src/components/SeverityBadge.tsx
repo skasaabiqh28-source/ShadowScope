@@ -9,28 +9,29 @@ interface Props {
 export const SeverityBadge: React.FC<Props> = ({ severity, size = 'md' }) => {
   const sev = (severity || 'Informational') as SeverityLevel;
 
-  const styleMap: Record<SeverityLevel, { bg: string; text: string; border: string }> = {
-    Critical: { bg: 'bg-red-950/40', text: 'text-red-400', border: 'border-red-800/60' },
-    High: { bg: 'bg-orange-950/40', text: 'text-orange-400', border: 'border-orange-800/60' },
-    Medium: { bg: 'bg-amber-950/40', text: 'text-amber-400', border: 'border-amber-800/60' },
-    Low: { bg: 'bg-blue-950/40', text: 'text-blue-400', border: 'border-blue-800/60' },
-    Informational: { bg: 'bg-slate-900/60', text: 'text-slate-400', border: 'border-slate-700/60' },
+  const styleMap: Record<SeverityLevel, { text: string; border: string; bg: string }> = {
+    Critical: { text: 'text-[#ff3333]', border: 'border-[#ff3333]', bg: 'bg-[#ff3333]/10' },
+    High: { text: 'text-[#ffb000]', border: 'border-[#ffb000]', bg: 'bg-[#ffb000]/10' },
+    Medium: { text: 'text-[#ffb000]', border: 'border-[#ffb000]/60', bg: 'bg-[#ffb000]/5' },
+    Low: { text: 'text-[#33ff00]', border: 'border-[#33ff00]/60', bg: 'bg-[#33ff00]/5' },
+    Informational: { text: 'text-[#94a3b8]', border: 'border-[#1f521f]', bg: 'bg-black' },
   };
 
   const style = styleMap[sev] || styleMap.Informational;
 
   const sizeClass = {
-    sm: 'px-1.5 py-0.5 text-xs',
-    md: 'px-2.5 py-0.5 text-xs',
-    lg: 'px-3 py-1 text-sm font-semibold',
+    sm: 'px-1.5 py-0.2 text-[10px]',
+    md: 'px-2 py-0.5 text-xs',
+    lg: 'px-3 py-1 text-sm font-bold',
   }[size];
 
   return (
     <span
-      className={`inline-flex items-center font-medium rounded-full border ${style.bg} ${style.text} ${style.border} ${sizeClass}`}
+      className={`inline-flex items-center font-mono tracking-wider uppercase border ${style.border} ${style.bg} ${style.text} ${sizeClass} select-none`}
     >
-      <span className="w-1.5 h-1.5 rounded-full mr-1.5 bg-current opacity-80" />
-      {sev}
+      <span className="opacity-60 mr-1">[</span>
+      <span className="font-bold">{sev}</span>
+      <span className="opacity-60 ml-1">]</span>
     </span>
   );
 };

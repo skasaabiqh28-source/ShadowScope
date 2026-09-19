@@ -64,7 +64,7 @@ class StrixAdapter:
                 session.add(log_row)
                 await session.commit()
 
-        async def on_complete_callback(s_id: str, exit_code: int, run_name: Optional[str], status: str):
+        async def on_complete_callback(s_id: str, exit_code: int, run_name: Optional[str], status: str, provider: Optional[str] = None):
             logger.info(f"Scan {s_id} finished with status '{status}' (code {exit_code})")
             async with AsyncSessionLocal() as session:
                 res = await session.execute(select(Scan).where(Scan.id == s_id))
@@ -73,6 +73,8 @@ class StrixAdapter:
                     scan_row.status = status
                     scan_row.exit_code = exit_code
                     scan_row.end_time = datetime.utcnow()
+                    if provider:
+                        scan_row.provider_used = provider
                     if scan_row.start_time:
                         scan_row.elapsed_seconds = int(
                             (scan_row.end_time - scan_row.start_time).total_seconds()

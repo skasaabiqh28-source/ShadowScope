@@ -21,6 +21,7 @@ from backend.schemas.api_schemas import (
     RetestRequest,
 )
 from backend.core.security import validate_local_path, validate_web_url, validate_github_repo
+from backend.integrations.llm.provider_manager import provider_manager
 from backend.integrations.strix.strix_adapter import strix_adapter
 from backend.integrations.strix.strix_runner import cancel_active_scan
 
@@ -124,6 +125,7 @@ async def create_scan(payload: ScanCreate, db: AsyncSession = Depends(get_db)):
             await db.flush()
             project_id = new_p.id
 
+    active_provider = provider_manager.determine_active_provider()
     scan = Scan(
         project_id=project_id,
         target_type=payload.target_type,
@@ -134,6 +136,7 @@ async def create_scan(payload: ScanCreate, db: AsyncSession = Depends(get_db)):
         max_turns=payload.max_turns,
         status="Starting",
         start_time=datetime.utcnow(),
+        provider_used=active_provider,
     )
     db.add(scan)
     await db.commit()
@@ -307,3 +310,86 @@ async def compare_scans(scan1_id: str, scan2_id: str, db: AsyncSession = Depends
         "persistent": persistent,
         "severity_changed": severity_changed,
     }
+
+
+@router.delete("/{scan_id}", status_code=status.HTTP_200_OK)
+async def delete_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Deletes a scan and cascades removal of its logs, findings, and attack paths.
+    """
+    res = await db.execute(select(Scan).where(Scan.id == scan_id))
+    scan = res.scalar_one_or_none()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    # If the scan is currently running, cancel the subprocess first
+    if scan.status in ["Starting", "Running"]:
+        cancel_active_scan(scan_id)
+
+    await db.delete(scan)
+    await db.commit()
+    return {"message": f"Scan {scan_id} deleted successfully.", "scan_id": scan_id}
+
+
+@router.post("/{scan_id}/retest", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
+async def retest_scan(
+    scan_id: str,
+    payload: Optional[RetestRequest] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Initiates a full retest of an entire previous scan, optionally using Strix's --resume or focused instruction.
+    """
+    res = await db.execute(select(Scan).where(Scan.id == scan_id))
+    original_scan = res.scalar_one_or_none()
+    if not original_scan:
+        raise HTTPException(status_code=404, detail="Original scan not found")
+
+    instruction = (
+        payload.instruction
+        if (payload and payload.instruction)
+        else f"Retest verification of entire security surface for {original_scan.target_value}"
+    )
+    scan_mode = payload.scan_mode if (payload and payload.scan_mode) else original_scan.scan_mode
+
+    retest_scan = Scan(
+        project_id=original_scan.project_id,
+        target_type=original_scan.target_type,
+        target_value=original_scan.target_value,
+        scan_mode=scan_mode,
+        instruction=instruction,
+        max_budget=original_scan.max_budget,
+        max_turns=original_scan.max_turns,
+        status="Starting",
+        start_time=datetime.now(timezone.utc),
+    )
+    db.add(retest_scan)
+    await db.commit()
+    await db.refresh(retest_scan)
+
+    # Launch background job with resume_run_name if available
+    await strix_adapter.start_scan_job(
+        scan_id=retest_scan.id,
+        target=original_scan.target_value,
+        scan_mode=scan_mode,
+        instruction=instruction,
+        max_budget=retest_scan.max_budget,
+        max_turns=retest_scan.max_turns,
+        resume_run_name=original_scan.strix_run_name,
+    )
+
+    return ScanResponse(
+        id=retest_scan.id,
+        project_id=retest_scan.project_id,
+        target_type=retest_scan.target_type,
+        target_value=retest_scan.target_value,
+        scan_mode=retest_scan.scan_mode,
+        instruction=retest_scan.instruction,
+        max_budget=retest_scan.max_budget,
+        max_turns=retest_scan.max_turns,
+        status=retest_scan.status,
+        start_time=retest_scan.start_time,
+        provider_used=retest_scan.provider_used,
+        findings_count=0,
+    )
+

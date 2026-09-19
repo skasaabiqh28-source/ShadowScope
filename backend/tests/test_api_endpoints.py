@@ -82,3 +82,65 @@ async def test_settings_endpoint_masks_secrets(client: AsyncClient):
     assert "AQ." not in str(data)
     assert "sk-" not in str(data)
     assert data["gemini_api_key_status"] in ["Configured", "Not Configured"]
+
+
+@pytest.mark.asyncio
+async def test_settings_patch_updates_defaults(client: AsyncClient):
+    patch_resp = await client.patch(
+        "/api/settings",
+        json={
+            "default_scan_mode": "quick",
+            "default_max_budget": 10.0,
+            "default_max_turns": 250,
+        },
+    )
+    assert patch_resp.status_code == 200
+    data = patch_resp.json()
+    assert data["default_scan_mode"] == "quick"
+    assert data["default_max_budget"] == 10.0
+    assert data["default_max_turns"] == 250
+
+
+@pytest.mark.asyncio
+async def test_projects_crud_endpoints(client: AsyncClient):
+    # 1. Create a project
+    create_resp = await client.post(
+        "/api/projects",
+        json={
+            "name": "Audit Test Project",
+            "target_type": "web_app",
+            "target_value": "https://example.com",
+            "description": "Project created during automated test audit",
+        },
+    )
+    assert create_resp.status_code == 201
+    proj = create_resp.json()
+    assert proj["name"] == "Audit Test Project"
+    proj_id = proj["id"]
+
+    # 2. List projects
+    list_resp = await client.get("/api/projects")
+    assert list_resp.status_code == 200
+    projects = list_resp.json()
+    assert any(p["id"] == proj_id for p in projects)
+
+    # 3. Get specific project
+    get_resp = await client.get(f"/api/projects/{proj_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == proj_id
+
+
+@pytest.mark.asyncio
+async def test_training_labs_endpoints(client: AsyncClient):
+    resp = await client.get("/api/labs")
+    assert resp.status_code == 200
+    labs = resp.json()
+    assert len(labs) >= 3
+    assert any("OWASP" in lab["title"] or "Juice Shop" in lab["title"] for lab in labs)
+
+
+@pytest.mark.asyncio
+async def test_report_not_found(client: AsyncClient):
+    resp = await client.get("/api/reports/nonexistent-uuid-999")
+    assert resp.status_code == 404
+

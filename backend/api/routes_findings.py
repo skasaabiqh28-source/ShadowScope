@@ -7,14 +7,14 @@ API Routes for Vulnerability Findings, Status Updates, Notes, and Retest request
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.connection import get_db
-from backend.database.models import Finding, FindingNote, RetestHistory, Scan
+from backend.database.models import Finding, FindingNote, RetestHistory, Scan, utc_now
 from backend.schemas.api_schemas import (
     FindingResponse,
     FindingStatusUpdate,
@@ -42,7 +42,7 @@ async def list_findings(
     """
     stmt = (
         select(Finding)
-        .options(selectinload(Finding.notes), selectinload(Finding.retests))
+        .options(selectinload(Finding.scan), selectinload(Finding.notes), selectinload(Finding.retests))
         .order_by(desc(Finding.created_at))
     )
 
@@ -76,7 +76,7 @@ async def get_finding(finding_id: str, db: AsyncSession = Depends(get_db)):
     """
     stmt = (
         select(Finding)
-        .options(selectinload(Finding.notes), selectinload(Finding.retests))
+        .options(selectinload(Finding.scan), selectinload(Finding.notes), selectinload(Finding.retests))
         .where(Finding.id == finding_id)
     )
     res = await db.execute(stmt)
@@ -97,7 +97,7 @@ async def update_finding_status(
     """
     stmt = (
         select(Finding)
-        .options(selectinload(Finding.notes), selectinload(Finding.retests))
+        .options(selectinload(Finding.scan), selectinload(Finding.notes), selectinload(Finding.retests))
         .where(Finding.id == finding_id)
     )
     res = await db.execute(stmt)
@@ -107,7 +107,7 @@ async def update_finding_status(
 
     old_status = finding.status
     finding.status = payload.status
-    finding.updated_at = datetime.utcnow()
+    finding.updated_at = utc_now()
 
     # If an explanation note was provided, save it
     if payload.note:
@@ -115,7 +115,7 @@ async def update_finding_status(
             finding_id=finding.id,
             author="Security Analyst",
             content=f"Status changed from [{old_status}] to [{payload.status}]: {payload.note}",
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         db.add(note)
 
@@ -142,7 +142,7 @@ async def add_finding_note(
         finding_id=finding.id,
         author=payload.author or "Security Analyst",
         content=payload.content,
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )
     db.add(note)
     await db.commit()
@@ -182,7 +182,7 @@ async def trigger_finding_retest(
         scan_mode=payload.scan_mode or "quick",
         instruction=focused_instruction,
         status="Starting",
-        start_time=datetime.utcnow(),
+        start_time=utc_now(),
     )
     db.add(retest_scan)
     await db.commit()

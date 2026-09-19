@@ -95,4 +95,28 @@ async def get_system_settings():
         "gemini_model": settings.GEMINI_MODEL,
         "ollama_url": settings.OLLAMA_BASE_URL,
         "ollama_model": settings.OLLAMA_MODEL,
+        "default_scan_mode": getattr(settings, "DEFAULT_SCAN_MODE", "deep"),
+        "default_max_budget": getattr(settings, "DEFAULT_MAX_BUDGET", None),
+        "default_max_turns": getattr(settings, "DEFAULT_MAX_TURNS", None),
     }
+
+
+@router.patch("")
+async def update_system_settings(payload: dict):
+    """
+    Updates configurable system defaults (scan mode, max budget, turns, reports dir, Strix path).
+    """
+    if "strix_executable_path" in payload and payload["strix_executable_path"]:
+        settings.STRIX_EXECUTABLE = payload["strix_executable_path"]
+    if "default_scan_mode" in payload and payload["default_scan_mode"]:
+        settings.DEFAULT_SCAN_MODE = payload["default_scan_mode"]
+    if "default_max_budget" in payload:
+        settings.DEFAULT_MAX_BUDGET = payload["default_max_budget"]
+    if "default_max_turns" in payload:
+        settings.DEFAULT_MAX_TURNS = payload["default_max_turns"]
+    if "reports_dir" in payload and payload["reports_dir"]:
+        settings.REPORTS_DIR = payload["reports_dir"]
+        os.makedirs(settings.REPORTS_DIR, exist_ok=True)
+
+    return await get_system_settings()
+

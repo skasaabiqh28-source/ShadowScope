@@ -23,12 +23,28 @@ import { TrainingLabs } from './pages/TrainingLabs';
 import { Settings } from './pages/Settings';
 import { ProviderStatus } from './types';
 import { api } from './services/api';
+import { ToastProvider } from './context/ToastContext';
 
-export const App: React.FC = () => {
-  const [currentRoute, setCurrentRoute] = useState<string>('dashboard');
-  const [routeParam, setRouteParam] = useState<string | undefined>(undefined);
+export const AppContent: React.FC = () => {
+  const parseHash = () => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    if (!hash) return { route: 'dashboard', param: undefined };
+    if (hash.startsWith('scans/')) {
+      return { route: 'monitor', param: hash.replace('scans/', '') };
+    }
+    if (hash.startsWith('findings/')) {
+      return { route: 'finding-detail', param: hash.replace('findings/', '') };
+    }
+    const parts = hash.split('/');
+    return { route: parts[0] || 'dashboard', param: parts[1] };
+  };
+
+  const initialParsed = parseHash();
+  const [currentRoute, setCurrentRoute] = useState<string>(initialParsed.route);
+  const [routeParam, setRouteParam] = useState<string | undefined>(initialParsed.param);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | undefined>(undefined);
   const [dockerRunning, setDockerRunning] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
   const fetchGlobalTelemetry = async () => {
     try {
@@ -44,19 +60,37 @@ export const App: React.FC = () => {
   useEffect(() => {
     fetchGlobalTelemetry();
     const interval = setInterval(fetchGlobalTelemetry, 15000);
-    return () => clearInterval(interval);
+
+    const onHashChange = () => {
+      const { route, param } = parseHash();
+      setCurrentRoute(route);
+      setRouteParam(param);
+    };
+    window.addEventListener('hashchange', onHashChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   const handleNavigate = (route: string, param?: string) => {
+    let newHash = route;
     if (route.startsWith('scans/')) {
+      newHash = route;
       setCurrentRoute('monitor');
       setRouteParam(route.replace('scans/', ''));
     } else if (route.startsWith('findings/')) {
+      newHash = route;
       setCurrentRoute('finding-detail');
       setRouteParam(route.replace('findings/', ''));
     } else {
+      newHash = param ? `${route}/${param}` : route;
       setCurrentRoute(route);
       setRouteParam(param);
+    }
+    if (window.location.hash.replace(/^#\/?/, '') !== newHash) {
+      window.location.hash = newHash;
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -116,8 +150,13 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0a0d14] text-gray-100">
-      {/* Persistent Navigation Sidebar */}
-      <Sidebar currentRoute={currentRoute} onNavigate={handleNavigate} />
+      {/* Navigation Sidebar (Desktop + Mobile Drawer) */}
+      <Sidebar
+        currentRoute={currentRoute}
+        onNavigate={handleNavigate}
+        isOpenMobile={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+      />
 
       {/* Main Layout Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
@@ -126,14 +165,23 @@ export const App: React.FC = () => {
           providerStatus={providerStatus}
           dockerRunning={dockerRunning}
           onRefreshProvider={fetchGlobalTelemetry}
+          onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         />
 
         {/* Scrollable Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-[#0a0d14]">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#0a0d14]">
           {renderContent()}
         </main>
       </div>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 };
 

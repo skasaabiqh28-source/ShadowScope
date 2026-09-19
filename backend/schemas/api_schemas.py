@@ -7,7 +7,7 @@ Pydantic data schemas for API request validation and response serialization.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,7 @@ class ProjectResponse(ProjectBase):
     scan_count: int = 0
     finding_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +75,7 @@ class ScanResponse(BaseModel):
     low_count: int = 0
     info_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ScanLogEntry(BaseModel):
@@ -88,8 +86,7 @@ class ScanLogEntry(BaseModel):
     message: str
     source: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +98,7 @@ class FindingNoteSchema(BaseModel):
     content: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RetestHistorySchema(BaseModel):
@@ -115,14 +111,14 @@ class RetestHistorySchema(BaseModel):
     notes: Optional[str] = None
     timestamp: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FindingResponse(BaseModel):
     id: str
     scan_id: str
     project_id: Optional[str] = None
+    target: Optional[str] = None
     title: str
     severity: str  # Critical, High, Medium, Low, Informational
     category: str
@@ -138,8 +134,7 @@ class FindingResponse(BaseModel):
     notes: List[FindingNoteSchema] = []
     retests: List[RetestHistorySchema] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FindingStatusUpdate(BaseModel):
@@ -289,3 +284,36 @@ class DashboardMetricsResponse(BaseModel):
     provider_status: ProviderStatusResponse
     docker_running: bool = False
     strix_available: bool = False
+
+
+# ---------------------------------------------------------------------------
+# System Settings Schemas
+# ---------------------------------------------------------------------------
+class SystemSettingsResponse(BaseModel):
+    app_name: str
+    app_version: str
+    strix_executable_path: str
+    strix_available: bool
+    strix_version: str
+    docker_running: bool
+    docker_status_text: str
+    database_url: str
+    reports_dir: str
+    scans_run_dir: str
+    llm_provider_mode: str
+    gemini_api_key_status: str
+    gemini_model: str
+    ollama_url: str
+    ollama_model: str
+    default_scan_mode: str = "deep"
+    default_max_budget: Optional[float] = None
+    default_max_turns: Optional[int] = None
+
+
+class SystemSettingsUpdate(BaseModel):
+    strix_executable_path: Optional[str] = None
+    default_scan_mode: Optional[str] = None
+    default_max_budget: Optional[float] = None
+    default_max_turns: Optional[int] = None
+    reports_dir: Optional[str] = None
+

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, Cpu, RefreshCw, Layers, ShieldCheck, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Terminal, Cpu, RefreshCw, AlertCircle, Menu, Shield } from 'lucide-react';
 import { ProviderStatus, ProviderMode } from '../types';
 import { api } from '../services/api';
 
@@ -8,6 +8,7 @@ interface Props {
   providerStatus?: ProviderStatus;
   dockerRunning?: boolean;
   onRefreshProvider?: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -15,8 +16,20 @@ export const Header: React.FC<Props> = ({
   providerStatus,
   dockerRunning,
   onRefreshProvider,
+  onToggleMobileMenu,
 }) => {
   const [switching, setSwitching] = useState(false);
+  const [currentTime, setCurrentTime] = useState('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC');
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleModeChange = async (newMode: ProviderMode) => {
     try {
@@ -47,39 +60,56 @@ export const Header: React.FC<Props> = ({
   const inCooldown = (providerStatus?.gemini_cooldown_remaining_seconds || 0) > 0;
 
   return (
-    <header className="h-16 px-6 bg-[#0d121c] border-b border-[#1a2333] flex items-center justify-between z-10">
-      {/* Title */}
-      <h1 className="text-lg font-semibold text-gray-100 capitalize">{title}</h1>
+    <header className="h-14 px-4 bg-black border-b border-[#1f521f] flex items-center justify-between z-10 shrink-0 font-mono text-xs select-none">
+      {/* Shell Prompt & Route Name */}
+      <div className="flex items-center space-x-3 overflow-hidden">
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            aria-label="Open navigation menu"
+            className="md:hidden text-[#33ff00] p-1 border border-[#1f521f] hover:bg-[#33ff00] hover:text-black"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        )}
 
-      {/* Right controls */}
-      <div className="flex items-center gap-4">
-        {/* Docker Indicator */}
-        <div
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-            dockerRunning
-              ? 'bg-blue-950/40 text-blue-400 border-blue-800/50'
-              : 'bg-red-950/40 text-red-400 border-red-800/50'
-          }`}
-          title={dockerRunning ? 'Docker sandbox is available' : 'Docker is not running'}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Docker: {dockerRunning ? 'Running' : 'Offline'}</span>
+        <div className="flex items-center space-x-2 font-mono">
+          <span className="text-[#1f521f] font-bold">#</span>
+          <span className="text-[#33ff00] font-bold">root@shadowscope</span>
+          <span className="text-[#1f521f]">:</span>
+          <span className="text-[#94a3b8]">~/{title.toLowerCase().replace(/\s+/g, '_')}</span>
+          <span className="cursor-block ml-1" />
+        </div>
+      </div>
+
+      {/* Right Telemetry Controls */}
+      <div className="flex items-center space-x-3">
+        {/* Live Clock */}
+        <div className="hidden lg:flex items-center text-[#1f521f] text-[11px] font-mono">
+          <span>{currentTime}</span>
         </div>
 
-        {/* LLM Provider Status & Failover Widget */}
-        <div className="flex items-center gap-2 bg-[#121824] border border-[#1e2738] rounded-lg px-3 py-1.5 text-xs">
-          <div className="flex items-center gap-1.5">
-            <Sparkles
-              className={`w-3.5 h-3.5 ${
-                active === 'GEMINI' ? 'text-cyan-400' : 'text-purple-400'
-              }`}
-            />
-            <span className="text-gray-400">LLM Engine:</span>
+        {/* Docker Sandbox Flag */}
+        <div
+          className={`hidden sm:flex items-center space-x-1.5 px-2 py-0.5 border text-[11px] font-mono uppercase ${
+            dockerRunning
+              ? 'border-[#33ff00] text-[#33ff00] bg-[#33ff00]/10'
+              : 'border-[#1f521f] text-[#94a3b8] bg-black'
+          }`}
+          title={dockerRunning ? 'Docker sandbox is active' : 'Docker sandbox offline'}
+        >
+          <span className="text-[#1f521f]">[</span>
+          <span>SANDBOX: {dockerRunning ? 'UP' : 'OFFLINE'}</span>
+          <span className="text-[#1f521f]">]</span>
+        </div>
+
+        {/* LLM Engine Control Box */}
+        <div className="flex items-center space-x-2 border border-[#1f521f] px-2.5 py-1 bg-[#050c05] text-[11px]">
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[#1f521f]">LLM:</span>
             <span
-              className={`font-semibold px-1.5 py-0.5 rounded text-[11px] ${
-                active === 'GEMINI'
-                  ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-800/40'
-                  : 'bg-purple-950/60 text-purple-300 border border-purple-800/40'
+              className={`font-bold uppercase ${
+                active === 'GEMINI' ? 'text-[#33ff00]' : 'text-[#ffb000]'
               }`}
             >
               {active}
@@ -88,32 +118,32 @@ export const Header: React.FC<Props> = ({
 
           {/* Cooldown Alert if Gemini hit 429 */}
           {inCooldown && (
-            <div className="flex items-center gap-1 text-amber-400 font-mono text-[11px] bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/50">
-              <AlertCircle className="w-3 h-3" />
-              <span>Cooldown ({providerStatus?.gemini_cooldown_remaining_seconds}s)</span>
+            <div className="flex items-center space-x-1 text-[#ffb000] border-l border-[#1f521f] pl-2">
+              <AlertCircle className="w-3 h-3 text-[#ffb000]" />
+              <span className="text-[10px]">CD:{providerStatus?.gemini_cooldown_remaining_seconds}s</span>
               <button
                 onClick={handleResetCooldown}
                 disabled={switching}
-                className="hover:underline ml-1 font-sans text-amber-300 text-[10px]"
-                title="Reset cooldown and retry Gemini immediately"
+                className="text-[#ffb000] hover:bg-[#ffb000] hover:text-black px-1 uppercase text-[9px] border border-[#ffb000]"
+                title="Reset cooldown"
               >
-                [Reset]
+                CLR
               </button>
             </div>
           )}
 
-          {/* Mode Dropdown */}
-          <div className="flex items-center gap-1 pl-2 border-l border-[#243044]">
-            <span className="text-gray-400">Mode:</span>
+          {/* Mode Selector */}
+          <div className="flex items-center space-x-1 border-l border-[#1f521f] pl-2">
+            <span className="text-[#1f521f]">MODE:</span>
             <select
               value={mode}
               disabled={switching}
               onChange={(e) => handleModeChange(e.target.value as ProviderMode)}
-              className="bg-[#182030] text-gray-200 border border-[#2b3850] rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="bg-black text-[#33ff00] border border-[#1f521f] px-1 py-0 text-[10px] uppercase font-mono focus:outline-none focus:border-[#33ff00] cursor-pointer"
             >
-              <option value="AUTO">AUTO (Gemini → Ollama Fallback)</option>
-              <option value="GEMINI">GEMINI Only</option>
-              <option value="OLLAMA">OLLAMA (Local)</option>
+              <option value="AUTO">AUTO (GEMINI-&gt;OLLAMA)</option>
+              <option value="GEMINI">GEMINI_ONLY</option>
+              <option value="OLLAMA">OLLAMA_LOCAL</option>
             </select>
           </div>
         </div>
@@ -121,3 +151,5 @@ export const Header: React.FC<Props> = ({
     </header>
   );
 };
+
+export default Header;

@@ -8,7 +8,7 @@ LLM Provider Manager — handles automatic switching between Google Gemini and l
 import os
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple, Dict, Any, List, Optional
 
@@ -65,7 +65,7 @@ class LLMProviderManager:
         self.gemini_last_error = reason
         
         event = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "reason": reason,
             "from_provider": "GEMINI",
             "to_provider": "OLLAMA",
@@ -93,39 +93,41 @@ class LLMProviderManager:
             return "OLLAMA"
         return "GEMINI"
 
-    def generate_strix_config(self, destination_dir: str) -> Tuple[str, str]:
+    def generate_strix_config(self, destination_dir: str) -> Tuple[str, str, Dict[str, str]]:
         """
         Generates a custom Strix JSON config file for the run, configured with the active LLM provider.
-        Returns: (path_to_config_file, active_provider_name)
+        Returns: (path_to_config_file, active_provider_name, env_vars_dict)
         """
         active_provider = self.determine_active_provider()
         config_path = os.path.join(destination_dir, "strix-cli-config.json")
 
         if active_provider == "GEMINI":
             api_key = self.gemini.api_key or ""
-            config_data = {
-                "env": {
-                    "STRIX_LLM": settings.GEMINI_MODEL,
-                    "LLM_API_KEY": api_key,
-                    "LLM_API_BASE": settings.GEMINI_API_BASE,
-                }
+            env_vars = {
+                "STRIX_LLM": settings.GEMINI_MODEL,
+                "GEMINI_API_KEY": api_key,
+                "LLM_API_KEY": api_key,
             }
+            # Only supply LLM_API_BASE for OpenAI-compatible proxies.
+            # Native Gemini models (gemini/...) route directly via LiteLLM to Google's API.
+            if settings.GEMINI_MODEL.startswith("openai/") and settings.GEMINI_API_BASE:
+                env_vars["LLM_API_BASE"] = settings.GEMINI_API_BASE
         else:
             # OLLAMA configuration
             model_name = f"ollama/{self.ollama.model}"
-            config_data = {
-                "env": {
-                    "STRIX_LLM": model_name,
-                    "LLM_API_BASE": self.ollama.base_url,
-                }
+            env_vars = {
+                "STRIX_LLM": model_name,
+                "LLM_API_BASE": self.ollama.base_url,
             }
+
+        config_data = {"env": env_vars}
 
         os.makedirs(destination_dir, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=2)
 
         logger.info(f"Prepared Strix run config [{active_provider}] -> {config_path}")
-        return config_path, active_provider
+        return config_path, active_provider, env_vars
 
     async def generate_assistant_response(
         self, prompt: str, system_prompt: Optional[str] = None

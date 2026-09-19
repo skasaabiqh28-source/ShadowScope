@@ -13,14 +13,23 @@ import {
 } from 'lucide-react';
 import { SystemSettings, ProviderMode } from '../types';
 import { api } from '../services/api';
+import { useToast } from '../context/ToastContext';
+import { SkeletonCard } from '../components/LoadingSkeleton';
 
 export const Settings: React.FC = () => {
+  const { addToast } = useToast();
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ProviderMode>('AUTO');
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [ollamaModel, setOllamaModel] = useState('llama3.2');
+  const [strixPath, setStrixPath] = useState('');
+  const [defaultScanMode, setDefaultScanMode] = useState('deep');
+  const [defaultMaxBudget, setDefaultMaxBudget] = useState<number | undefined>(undefined);
+  const [defaultMaxTurns, setDefaultMaxTurns] = useState<number | undefined>(undefined);
+  const [reportsDir, setReportsDir] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingScanDefaults, setSavingScanDefaults] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const loadSettings = async () => {
@@ -31,8 +40,14 @@ export const Settings: React.FC = () => {
       setMode(data.llm_provider_mode as ProviderMode);
       setOllamaUrl(data.ollama_url);
       setOllamaModel(data.ollama_model);
-    } catch (err) {
+      setStrixPath(data.strix_executable_path || '');
+      setDefaultScanMode(data.default_scan_mode || 'deep');
+      setDefaultMaxBudget(data.default_max_budget);
+      setDefaultMaxTurns(data.default_max_turns);
+      setReportsDir(data.reports_dir || '');
+    } catch (err: any) {
       console.error('Failed to load settings:', err);
+      addToast(err.message || 'Failed to load system settings', 'error');
     } finally {
       setLoading(false);
     }
@@ -42,16 +57,39 @@ export const Settings: React.FC = () => {
     loadSettings();
   }, []);
 
+  const handleSaveScanDefaults = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSavingScanDefaults(true);
+      await api.updateSettings({
+        strix_executable_path: strixPath.trim() || undefined,
+        default_scan_mode: defaultScanMode,
+        default_max_budget: defaultMaxBudget,
+        default_max_turns: defaultMaxTurns,
+        reports_dir: reportsDir.trim() || undefined,
+      });
+      setSaveSuccess(true);
+      addToast('Scan execution defaults updated successfully', 'success');
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await loadSettings();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update scan defaults', 'error');
+    } finally {
+      setSavingScanDefaults(false);
+    }
+  };
+
   const handleSaveProviders = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setSaving(true);
       await api.updateProviderMode(mode, ollamaUrl, ollamaModel);
       setSaveSuccess(true);
+      addToast('LLM provider failover settings saved', 'success');
       setTimeout(() => setSaveSuccess(false), 3000);
       await loadSettings();
     } catch (err: any) {
-      alert(err.message || 'Failed to update settings');
+      addToast(err.message || 'Failed to update LLM provider settings', 'error');
     } finally {
       setSaving(false);
     }
@@ -59,9 +97,10 @@ export const Settings: React.FC = () => {
 
   if (loading && !settings) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-400">
-        <RefreshCw className="w-6 h-6 animate-spin mr-2 text-blue-500" />
-        <span>Loading system settings...</span>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <SkeletonCard height="h-24" />
+        <SkeletonCard height="h-48" />
+        <SkeletonCard height="h-64" />
       </div>
     );
   }
@@ -80,7 +119,7 @@ export const Settings: React.FC = () => {
       </div>
 
       {saveSuccess && (
-        <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-lg text-emerald-300 text-xs flex items-center gap-2">
+        <div role="status" className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-lg text-emerald-300 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4" />
           Settings updated successfully.
         </div>
@@ -141,6 +180,105 @@ export const Settings: React.FC = () => {
         </div>
       </div>
 
+      {/* Scan Execution Defaults & Engine Paths */}
+      <form onSubmit={handleSaveScanDefaults} className="bg-[#111726] border border-[#1d273a] p-6 rounded-xl space-y-4">
+        <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-blue-400" />
+          Scan Execution & Engine Defaults
+        </h3>
+
+        <div className="space-y-4 text-xs">
+          <div>
+            <label htmlFor="settings-strix-path" className="text-gray-400 block mb-1 font-semibold">
+              Custom Strix Binary Path
+            </label>
+            <input
+              id="settings-strix-path"
+              type="text"
+              value={strixPath}
+              onChange={(e) => setStrixPath(e.target.value)}
+              placeholder="C:\Users\...\Scripts\strix.exe or strix"
+              className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="settings-default-mode" className="text-gray-400 block mb-1 font-semibold">
+                Default Scan Mode
+              </label>
+              <select
+                id="settings-default-mode"
+                value={defaultScanMode}
+                onChange={(e) => setDefaultScanMode(e.target.value)}
+                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+              >
+                <option value="quick">Quick (CI/CD)</option>
+                <option value="standard">Standard</option>
+                <option value="deep">Deep (Exhaustive)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="settings-default-budget" className="text-gray-400 block mb-1 font-semibold">
+                Default Max Budget (USD)
+              </label>
+              <input
+                id="settings-default-budget"
+                type="number"
+                step="0.5"
+                min="0"
+                value={defaultMaxBudget !== undefined ? defaultMaxBudget : ''}
+                onChange={(e) => setDefaultMaxBudget(e.target.value ? parseFloat(e.target.value) : undefined)}
+                placeholder="Unlimited"
+                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="settings-default-turns" className="text-gray-400 block mb-1 font-semibold">
+                Default Max Turns
+              </label>
+              <input
+                id="settings-default-turns"
+                type="number"
+                min="10"
+                max="1000"
+                value={defaultMaxTurns !== undefined ? defaultMaxTurns : ''}
+                onChange={(e) => setDefaultMaxTurns(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                placeholder="500"
+                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="settings-reports-dir" className="text-gray-400 block mb-1 font-semibold">
+              Reports Output Directory
+            </label>
+            <input
+              id="settings-reports-dir"
+              type="text"
+              value={reportsDir}
+              onChange={(e) => setReportsDir(e.target.value)}
+              placeholder="reports/"
+              className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={savingScanDefaults}
+            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white text-xs font-medium rounded-lg transition-colors shadow-md shadow-blue-600/20 focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <Save className="w-4 h-4" />
+            {savingScanDefaults ? 'Saving...' : 'Save Scan Defaults'}
+          </button>
+        </div>
+      </form>
+
       {/* LLM Provider Configuration Form */}
       <form onSubmit={handleSaveProviders} className="bg-[#111726] border border-[#1d273a] p-6 rounded-xl space-y-4">
         <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
@@ -150,8 +288,11 @@ export const Settings: React.FC = () => {
 
         <div className="space-y-4 text-xs">
           <div>
-            <label className="text-gray-400 block mb-1 font-semibold">Active Provider Mode</label>
+            <label htmlFor="settings-provider-mode" className="text-gray-400 block mb-1 font-semibold">
+              Active Provider Mode
+            </label>
             <select
+              id="settings-provider-mode"
               value={mode}
               onChange={(e) => setMode(e.target.value as ProviderMode)}
               className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
@@ -164,8 +305,9 @@ export const Settings: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-gray-400 block mb-1">Google Gemini API Key Status</label>
+              <label htmlFor="gemini-key-status" className="text-gray-400 block mb-1">Google Gemini API Key Status</label>
               <input
+                id="gemini-key-status"
                 type="text"
                 disabled
                 value={settings?.gemini_api_key_status || 'Not Configured'}
@@ -177,11 +319,12 @@ export const Settings: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-gray-400 block mb-1">Google Gemini Model</label>
+              <label htmlFor="gemini-model-name" className="text-gray-400 block mb-1">Google Gemini Model</label>
               <input
+                id="gemini-model-name"
                 type="text"
                 disabled
-                value={settings?.gemini_model || 'gemini-3.8-flash'}
+                value={settings?.gemini_model || 'gemini-2.5-flash'}
                 className="w-full bg-[#0d121c] border border-[#222d42] rounded-lg px-3 py-2 text-xs text-gray-200 font-mono cursor-not-allowed"
               />
             </div>
@@ -189,8 +332,9 @@ export const Settings: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-gray-400 block mb-1">Ollama Local Server URL</label>
+              <label htmlFor="settings-ollama-url" className="text-gray-400 block mb-1">Ollama Local Server URL</label>
               <input
+                id="settings-ollama-url"
                 type="text"
                 value={ollamaUrl}
                 onChange={(e) => setOllamaUrl(e.target.value)}
@@ -200,8 +344,9 @@ export const Settings: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-gray-400 block mb-1">Ollama Fallback Model</label>
+              <label htmlFor="settings-ollama-model" className="text-gray-400 block mb-1">Ollama Fallback Model</label>
               <input
+                id="settings-ollama-model"
                 type="text"
                 value={ollamaModel}
                 onChange={(e) => setOllamaModel(e.target.value)}
@@ -216,7 +361,7 @@ export const Settings: React.FC = () => {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg transition-colors shadow-md shadow-blue-600/20"
+            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white text-xs font-medium rounded-lg transition-colors shadow-md shadow-blue-600/20 focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : 'Save Configuration'}

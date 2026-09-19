@@ -23,8 +23,12 @@ class GeminiClient:
     def __init__(self):
         self.api_base = settings.GEMINI_API_BASE
         self.model = settings.GEMINI_MODEL
-        # Remove 'openai/' prefix if present for direct model references
-        self.clean_model_name = self.model.replace("openai/", "")
+        # Strip provider prefixes (openai/, gemini/) for Google's OpenAI-compatible endpoint
+        clean = self.model
+        for prefix in ("openai/", "gemini/"):
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+        self.clean_model_name = clean
         self.api_key = self._resolve_api_key()
 
     def _resolve_api_key(self) -> Optional[str]:
@@ -46,7 +50,7 @@ class GeminiClient:
                 with open(strix_cfg_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     env_dict = data.get("env", {})
-                    key = env_dict.get("LLM_API_KEY")
+                    key = env_dict.get("GEMINI_API_KEY") or env_dict.get("LLM_API_KEY")
                     if key:
                         return key
             except Exception as e:

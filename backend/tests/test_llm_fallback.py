@@ -67,3 +67,32 @@ async def test_assistant_auto_fallback_on_429():
     # Verify Gemini is now in cooldown
     in_cooldown, _ = mgr.is_gemini_in_cooldown()
     assert in_cooldown is True
+
+
+def test_strix_config_generation(tmp_path):
+    mgr = LLMProviderManager()
+    mgr.gemini.api_key = "test-gemini-key"
+    
+    # Test GEMINI provider config
+    mgr.set_mode("GEMINI")
+    cfg_path, provider, env = mgr.generate_strix_config(str(tmp_path))
+    assert provider == "GEMINI"
+    assert env["STRIX_LLM"].startswith("gemini/") or env["STRIX_LLM"].startswith("openai/")
+    assert env["GEMINI_API_KEY"] == "test-gemini-key"
+    assert env["LLM_API_KEY"] == "test-gemini-key"
+
+    # Test OLLAMA provider config
+    mgr.set_mode("OLLAMA")
+    cfg_path_ol, provider_ol, env_ol = mgr.generate_strix_config(str(tmp_path))
+    assert provider_ol == "OLLAMA"
+    assert "ollama/" in env_ol["STRIX_LLM"]
+    assert "LLM_API_BASE" in env_ol
+
+
+def test_gemini_client_model_cleaning():
+    from backend.integrations.llm.gemini_client import GeminiClient
+    client = GeminiClient()
+    # clean_model_name must not have 'openai/' or 'gemini/' prefixes
+    assert not client.clean_model_name.startswith("openai/")
+    assert not client.clean_model_name.startswith("gemini/")
+    assert "gemini-3.6-flash" in client.clean_model_name

@@ -4,30 +4,113 @@
 
 @layer base {
   body {
-    @apply bg-[#0a0d14] text-[#f3f4f6] min-h-screen font-sans;
+    @apply bg-[#0a0a0a] text-[#33ff00] min-h-screen font-mono antialiased overflow-x-hidden;
+    background-color: #0a0a0a;
+    color: #33ff00;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  /* Universal zero radius enforcement */
+  *, ::before, ::after {
+    border-radius: 0 !important;
   }
 }
 
-/* Custom modern dark scrollbar */
+/* CRT Scanline Overlay */
+body::after {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+  z-index: 9999;
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+/* CRT Screen Flicker effect (subtle) */
+@keyframes flicker {
+  0% { opacity: 0.99; }
+  50% { opacity: 1; }
+  100% { opacity: 0.98; }
+}
+
+#root {
+  animation: flicker 0.15s infinite;
+}
+
+/* Custom Terminal Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: #0a0a0a;
+  border-left: 1px solid #1f521f;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1f293d;
-  border-radius: 4px;
+  background: #1f521f;
+  border: 1px solid #33ff00;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #33ff00;
 }
 
-/* Code and log pre styles */
-code, pre {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+/* Phosphor Glow Utilities */
+.terminal-glow {
+  text-shadow: 0 0 6px rgba(51, 255, 0, 0.55);
+}
+
+.amber-glow {
+  text-shadow: 0 0 6px rgba(255, 176, 0, 0.55);
+}
+
+.error-glow {
+  text-shadow: 0 0 6px rgba(255, 51, 51, 0.55);
+}
+
+.box-glow {
+  box-shadow: 0 0 8px rgba(51, 255, 0, 0.25);
+}
+
+/* Inverted text helper */
+.terminal-invert {
+  @apply bg-[#33ff00] text-[#0a0a0a] font-bold;
+}
+
+/* Terminal Buttons */
+.btn-terminal {
+  @apply inline-flex items-center justify-center px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all duration-75 border border-[#33ff00] text-[#33ff00] bg-black hover:bg-[#33ff00] hover:text-black active:translate-y-0.5 focus:outline-none focus:ring-1 focus:ring-[#33ff00];
+}
+
+.btn-terminal-amber {
+  @apply inline-flex items-center justify-center px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all duration-75 border border-[#ffb000] text-[#ffb000] bg-black hover:bg-[#ffb000] hover:text-black active:translate-y-0.5 focus:outline-none focus:ring-1 focus:ring-[#ffb000];
+}
+
+.btn-terminal-danger {
+  @apply inline-flex items-center justify-center px-3 py-1.5 font-mono text-xs uppercase tracking-wider transition-all duration-75 border border-[#ff3333] text-[#ff3333] bg-black hover:bg-[#ff3333] hover:text-black active:translate-y-0.5 focus:outline-none focus:ring-1 focus:ring-[#ff3333];
+}
+
+/* Terminal Input */
+.input-terminal {
+  @apply bg-black border border-[#1f521f] text-[#33ff00] px-3 py-1.5 font-mono text-xs focus:outline-none focus:border-[#33ff00] focus:ring-1 focus:ring-[#33ff00] placeholder:text-[#1f521f];
+}
+
+/* Blinking Cursor Element */
+.cursor-block {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  background-color: #33ff00;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }

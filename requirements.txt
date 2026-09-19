@@ -1,0 +1,32 @@
+# ============================================================
+# ShadowScopeAI - Python Dependencies
+# ============================================================
+# Install: pip install -r requirements.txt
+# ============================================================
+
+# Web framework
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+
+# Database
+SQLAlchemy==2.0.54
+aiosqlite==0.22.1
+
+# Configuration
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# HTTP client
+httpx==0.28.1
+
+# LLM / AI
+litellm==1.101.0
+openai==2.54.0
+
+# Strix security engine
+strix-agent==1.6.2
+
+# Utilities
+python-multipart==0.0.32
+PyYAML==6.0.3
+reportlab==5.0.1

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  Terminal,
   FolderCode,
   GitFork,
   Globe,
@@ -7,19 +8,21 @@ import {
   ShieldCheck,
   AlertTriangle,
   Play,
-  ArrowRight,
-  Info,
+  Copy,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useToast } from '../context/ToastContext';
+import { TerminalPane } from '../components/TerminalPane';
 
 interface Props {
   onNavigate: (route: string, param?: string) => void;
 }
 
 export const NewScan: React.FC<Props> = ({ onNavigate }) => {
+  const { addToast } = useToast();
   const [targetType, setTargetType] = useState<'local_project' | 'github_repo' | 'web_app' | 'api_spec'>('local_project');
-  const [targetValue, setTargetValue] = useState('C:\\Users\\saabi\\OneDrive\\Desktop\\SignBridgeAI');
-  const [projectName, setProjectName] = useState('SignBridgeAI');
+  const [targetValue, setTargetValue] = useState('');
+  const [projectName, setProjectName] = useState('');
   const [scanMode, setScanMode] = useState<'quick' | 'standard' | 'deep'>('deep');
   const [instruction, setInstruction] = useState('Focus on authentication, authorization, and input validation vulnerabilities.');
   const [maxBudget, setMaxBudget] = useState<number | undefined>(undefined);
@@ -28,57 +31,93 @@ export const NewScan: React.FC<Props> = ({ onNavigate }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      const prefillTarget = sessionStorage.getItem('prefill_scan_target');
+      const prefillType = sessionStorage.getItem('prefill_scan_type');
+      const prefillInstruction = sessionStorage.getItem('prefill_scan_instruction');
+      if (prefillTarget) {
+        setTargetValue(prefillTarget);
+        sessionStorage.removeItem('prefill_scan_target');
+      }
+      if (prefillType) {
+        setTargetType(prefillType as any);
+        sessionStorage.removeItem('prefill_scan_type');
+      }
+      if (prefillInstruction) {
+        setInstruction(prefillInstruction);
+        sessionStorage.removeItem('prefill_scan_instruction');
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  const estimatedCommand = `strix --target "${targetValue || '<target>'}" --scan-mode ${scanMode}${instruction ? ` --instruction "${instruction.replace(/"/g, '\\"')}"` : ''}${maxBudget ? ` --max-budget ${maxBudget}` : ''}${maxTurns ? ` --max-turns ${maxTurns}` : ''} --non-interactive`;
+
   const targetTypes = [
     {
       id: 'local_project',
-      label: 'Local Project',
-      desc: 'Source code folder on this machine',
+      code: '01',
+      label: 'LOCAL_PROJECT',
+      desc: 'Local directory on disk',
       icon: FolderCode,
-      placeholder: 'C:\\Projects\\MyApplication',
-      defaultVal: 'C:\\Users\\saabi\\OneDrive\\Desktop\\SignBridgeAI',
+      placeholder: 'C:\\Users\\...\\Project or /home/.../code',
     },
     {
       id: 'github_repo',
-      label: 'GitHub Repository',
-      desc: 'Public or authorized git repository',
+      code: '02',
+      label: 'GITHUB_REPO',
+      desc: 'Remote Git repository',
       icon: GitFork,
       placeholder: 'https://github.com/owner/repo',
-      defaultVal: 'https://github.com/usestrix/strix',
     },
     {
       id: 'web_app',
-      label: 'Web Application',
-      desc: 'Live authorized web URL or staging host',
+      code: '03',
+      label: 'WEB_APPLICATION',
+      desc: 'Live authorized URL',
       icon: Globe,
-      placeholder: 'https://staging.example.com',
-      defaultVal: 'http://localhost:3000',
+      placeholder: 'https://staging.target.internal',
     },
     {
       id: 'api_spec',
-      label: 'OpenAPI / Swagger',
-      desc: 'REST API spec file path or URL',
+      code: '04',
+      label: 'OPENAPI_SPEC',
+      desc: 'REST API spec file/URL',
       icon: FileCode2,
-      placeholder: 'C:\\Specs\\openapi.yaml or https://api.com/swagger.json',
-      defaultVal: '',
+      placeholder: 'C:\\Specs\\openapi.yaml or https://.../swagger.json',
     },
   ];
 
-  const handleSelectType = (typeId: any) => {
-    setTargetType(typeId);
-    const match = targetTypes.find((t) => t.id === typeId);
-    if (match) {
-      setTargetValue(match.defaultVal);
+  const handleTargetChange = (val: string) => {
+    setTargetValue(val);
+    if (!projectName && targetType === 'local_project' && val.trim()) {
+      const parts = val.trim().replace(/[\\/]+$/, '').split(/[\\/]/);
+      const last = parts[parts.length - 1];
+      if (last && !last.includes(':')) {
+        setProjectName(last);
+      }
     }
+  };
+
+  const handleClear = () => {
+    setTargetValue('');
+    setProjectName('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authorized) {
-      setError('You must acknowledge that you have explicit authorization to scan this target.');
+      const msg = 'LEGAL_AUTH_REQUIRED: You must certify authorization to assess this target.';
+      setError(msg);
+      addToast(msg, 'warning');
       return;
     }
     if (!targetValue.trim()) {
-      setError('Target value cannot be empty.');
+      const msg = 'TARGET_REQUIRED: Target path or URI cannot be empty.';
+      setError(msg);
+      addToast(msg, 'warning');
       return;
     }
 
@@ -96,40 +135,51 @@ export const NewScan: React.FC<Props> = ({ onNavigate }) => {
         authorization_acknowledged: true,
       });
 
-      // Navigate to the live scan monitor
+      addToast('[SYS_OK] Scan initiated. Transferring to monitor...', 'success');
       onNavigate(`scans/${scan.id}`);
     } catch (err: any) {
-      setError(err.message || 'Failed to initiate security scan.');
+      const msg = err.message || 'EXEC_ERR: Failed to initiate scan.';
+      setError(msg);
+      addToast(msg, 'error');
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-          <Play className="w-5 h-5 text-blue-400" />
-          New Security Scan Wizard
-        </h2>
-        <p className="text-sm text-gray-400 mt-1">
-          Configure an authorized penetration test using the installed Strix 1.6.2 engine.
-        </p>
-      </div>
+    <div className="max-w-4xl mx-auto space-y-4 font-mono text-xs">
+      {/* Title Pane */}
+      <TerminalPane title="INIT_SECURITY_SCAN" prefix="WIZARD">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[#33ff00] font-bold text-sm tracking-wider uppercase terminal-glow flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-[#33ff00]" />
+              AUTONOMOUS PENETRATION TESTING CONFIGURATOR
+            </div>
+            <p className="text-[11px] text-[#94a3b8] mt-0.5">
+              Specify target parameters, review isolated execution flags, and launch Strix engine.
+            </p>
+          </div>
+          <div className="hidden sm:block text-[10px] text-[#1f521f] text-right">
+            <span>ISOLATION: DOCKER_CONTAINER</span><br />
+            <span>PRIVILEGES: SANDBOXED</span>
+          </div>
+        </div>
+      </TerminalPane>
 
       {error && (
-        <div className="p-4 bg-red-950/40 border border-red-800/60 rounded-lg text-red-300 text-sm flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <div>{error}</div>
+        <div
+          role="alert"
+          className="p-3 bg-[#ff3333]/10 border border-[#ff3333] text-[#ff3333] flex items-center space-x-2"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#ff3333]" />
+          <span className="font-bold">{error}</span>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Step 1: Target Type */}
-        <div className="bg-[#111726] border border-[#1d273a] p-5 rounded-xl space-y-3">
-          <label className="text-sm font-semibold text-gray-200 block">
-            STEP 1: Select Target Type
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Step 1: Target Vector */}
+        <TerminalPane title="STEP_01: TARGET_VECTOR" prefix="CFG">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {targetTypes.map((t) => {
               const Icon = t.icon;
               const isSelected = targetType === t.id;
@@ -137,198 +187,247 @@ export const NewScan: React.FC<Props> = ({ onNavigate }) => {
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => handleSelectType(t.id)}
-                  className={`flex flex-col items-start p-4 rounded-lg border text-left transition-all ${
+                  onClick={() => setTargetType(t.id as any)}
+                  className={`p-3 border text-left font-mono transition-all duration-75 ${
                     isSelected
-                      ? 'bg-blue-600/15 border-blue-500/50 shadow-md shadow-blue-500/10'
-                      : 'bg-[#141b29] border-[#222d42] hover:border-[#324260]'
+                      ? 'bg-[#33ff00] text-black border-[#33ff00] font-bold shadow-[0_0_8px_rgba(51,255,0,0.4)]'
+                      : 'bg-black text-[#33ff00] border-[#1f521f] hover:border-[#33ff00]/60 hover:bg-[#0d220d]'
                   }`}
                 >
-                  <Icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-blue-400' : 'text-gray-400'}`} />
-                  <div className={`font-semibold text-sm ${isSelected ? 'text-gray-100' : 'text-gray-300'}`}>
-                    {t.label}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[10px] ${isSelected ? 'text-black' : 'text-[#1f521f]'}`}>
+                      [{t.code}]
+                    </span>
+                    <Icon className={`w-4 h-4 ${isSelected ? 'text-black' : 'text-[#33ff00]'}`} />
                   </div>
-                  <div className="text-xs text-gray-400 mt-1 leading-snug">{t.desc}</div>
+                  <div className="font-bold text-xs uppercase tracking-wider">
+                    {isSelected ? `* ${t.label}` : t.label}
+                  </div>
+                  <div className={`text-[10px] mt-1 ${isSelected ? 'text-black/80' : 'text-[#94a3b8]'}`}>
+                    {t.desc}
+                  </div>
                 </button>
               );
             })}
           </div>
-        </div>
+        </TerminalPane>
 
         {/* Step 2: Target Path/URL Input */}
-        <div className="bg-[#111726] border border-[#1d273a] p-5 rounded-xl space-y-4">
-          <label className="text-sm font-semibold text-gray-200 block">
-            STEP 2: Target Identifier & Project Name
-          </label>
-
+        <TerminalPane title="STEP_02: TARGET_SPECIFICATION" prefix="URI">
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Project Name (Optional label)</label>
-              <input
-                type="text"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="e.g. SignBridgeAI"
-                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3.5 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="target-value-input" className="text-[#94a3b8] uppercase font-bold text-[11px]">
+                  TARGET_PATH_OR_URI <span className="text-[#ff3333]">*</span>
+                </label>
+                {targetValue && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="text-[#ffb000] hover:underline text-[10px]"
+                  >
+                    [CLEAR_INPUT]
+                  </button>
+                )}
+              </div>
 
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">
-                Target Path, URL, or Specification
-              </label>
-              <input
-                type="text"
-                value={targetValue}
-                onChange={(e) => setTargetValue(e.target.value)}
-                placeholder={targetTypes.find((t) => t.id === targetType)?.placeholder}
-                required
-                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3.5 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
-              />
-              <p className="text-xs text-gray-500 mt-1.5">
-                {targetType === 'local_project' && 'Directory will be mounted read/write into the Strix Docker sandbox.'}
-                {targetType === 'github_repo' && 'Enter public or authorized GitHub clone URL.'}
-                {targetType === 'web_app' && 'Ensure host is reachable from this machine.'}
-                {targetType === 'api_spec' && 'Local OpenAPI file path or HTTP URL to swagger.json.'}
+              <div className="flex items-center bg-black border border-[#1f521f] focus-within:border-[#33ff00] px-2 py-1.5">
+                <span className="text-[#1f521f] select-none mr-2 font-bold">&gt;&gt;</span>
+                <input
+                  id="target-value-input"
+                  type="text"
+                  value={targetValue}
+                  onChange={(e) => handleTargetChange(e.target.value)}
+                  placeholder={targetTypes.find((t) => t.id === targetType)?.placeholder}
+                  required
+                  className="w-full bg-transparent text-[#33ff00] font-mono text-xs focus:outline-none placeholder:text-[#1f521f]"
+                />
+              </div>
+              <p className="text-[10px] text-[#1f521f] mt-1">
+                {targetType === 'local_project' && '// Mounts local repository or folder directly into isolated Strix assessment sandbox.'}
+                {targetType === 'github_repo' && '// Clones public or authorized Git repository for deep code-level security analysis.'}
+                {targetType === 'web_app' && '// Probes authorized web application endpoints for dynamic vulnerabilities.'}
+                {targetType === 'api_spec' && '// Parses OpenAPI/Swagger specification file for API security audits.'}
               </p>
             </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="project-name-input" className="text-[#94a3b8] uppercase text-[11px]">
+                  PROJECT_NAME_ALIAS (OPTIONAL)
+                </label>
+                {projectName && (
+                  <button
+                    type="button"
+                    onClick={() => setProjectName('')}
+                    className="text-[#94a3b8] hover:text-[#ff3333] text-[10px]"
+                  >
+                    [CLEAR]
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center bg-black border border-[#1f521f] focus-within:border-[#33ff00] px-2 py-1">
+                <span className="text-[#1f521f] select-none mr-2 font-bold">&gt;&gt;</span>
+                <input
+                  id="project-name-input"
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="e.g. AcmeBackend"
+                  className="w-full bg-transparent text-[#33ff00] font-mono text-xs focus:outline-none placeholder:text-[#1f521f]"
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </TerminalPane>
 
         {/* Step 3: Scan Configuration */}
-        <div className="bg-[#111726] border border-[#1d273a] p-5 rounded-xl space-y-4">
-          <label className="text-sm font-semibold text-gray-200 block">
-            STEP 3: Scan Configuration
-          </label>
+        <TerminalPane title="STEP_03: EXECUTION_PARAMETERS" prefix="OPT">
+          <div className="space-y-3">
+            {/* Scan Mode Switchers */}
+            <div>
+              <div className="text-[11px] text-[#94a3b8] uppercase mb-2 font-bold">SCAN_DEPTH_MODE:</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { id: 'quick', title: 'QUICK', desc: 'Surface check / CI gate' },
+                  { id: 'standard', title: 'STANDARD', desc: 'Routine pentest pass' },
+                  { id: 'deep', title: 'DEEP (RECOMMENDED)', desc: 'Exhaustive vulnerability discovery' },
+                ].map((m) => {
+                  const isSelected = scanMode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setScanMode(m.id as any)}
+                      className={`p-2.5 border text-left font-mono transition-all duration-75 ${
+                        isSelected
+                          ? 'border-[#33ff00] bg-[#33ff00] text-black font-bold'
+                          : 'border-[#1f521f] bg-black text-[#33ff00] hover:bg-[#0d220d]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs uppercase font-bold">
+                          {isSelected ? `[*] ${m.title}` : `[ ] ${m.title}`}
+                        </span>
+                      </div>
+                      <div className={`text-[10px] mt-1 ${isSelected ? 'text-black/80' : 'text-[#94a3b8]'}`}>
+                        {m.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-          {/* Scan Mode Radio Cards */}
-          <div>
-            <label className="text-xs text-gray-400 block mb-2">Scan Mode</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { id: 'quick', title: 'Quick Mode', desc: 'Fast surface check for CI/CD' },
-                { id: 'standard', title: 'Standard Mode', desc: 'Routine penetration test' },
-                { id: 'deep', title: 'Deep Mode (Default)', desc: 'Thorough, exhaustive security review' },
-              ].map((m) => (
-                <label
-                  key={m.id}
-                  className={`flex flex-col p-3.5 rounded-lg border cursor-pointer transition-all ${
-                    scanMode === m.id
-                      ? 'bg-blue-600/15 border-blue-500/50'
-                      : 'bg-[#141b29] border-[#222d42] hover:border-[#324260]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm text-gray-200">{m.title}</span>
-                    <input
-                      type="radio"
-                      name="scanMode"
-                      value={m.id}
-                      checked={scanMode === m.id}
-                      onChange={() => setScanMode(m.id as any)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                  </div>
-                  <span className="text-xs text-gray-400 mt-1">{m.desc}</span>
+            {/* Custom Instructions */}
+            <div>
+              <label htmlFor="custom-instructions-input" className="text-[11px] text-[#94a3b8] uppercase block mb-1 font-bold">
+                OPERATIONAL_DIRECTIVES (INSTRUCTIONS_TO_AGENT):
+              </label>
+              <textarea
+                id="custom-instructions-input"
+                rows={2}
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder="e.g. Focus on IDOR, SQL injection, and authorization weaknesses."
+                className="w-full bg-black border border-[#1f521f] text-[#33ff00] p-2 font-mono text-xs focus:outline-none focus:border-[#33ff00]"
+              />
+            </div>
+
+            {/* Limits */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="max-budget-input" className="text-[11px] text-[#94a3b8] uppercase block mb-1">
+                  MAX_BUDGET_USD (OPTIONAL)
                 </label>
-              ))}
+                <input
+                  id="max-budget-input"
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={maxBudget !== undefined ? maxBudget : ''}
+                  onChange={(e) => setMaxBudget(e.target.value ? parseFloat(e.target.value) : undefined)}
+                  placeholder="UNLIMITED"
+                  className="input-terminal w-full"
+                />
+              </div>
+              <div>
+                <label htmlFor="max-turns-input" className="text-[11px] text-[#94a3b8] uppercase block mb-1">
+                  MAX_TURNS (OPTIONAL)
+                </label>
+                <input
+                  id="max-turns-input"
+                  type="number"
+                  min="10"
+                  max="1000"
+                  value={maxTurns !== undefined ? maxTurns : ''}
+                  onChange={(e) => setMaxTurns(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                  placeholder="DEFAULT: 500"
+                  className="input-terminal w-full"
+                />
+              </div>
             </div>
           </div>
+        </TerminalPane>
 
-          {/* Custom Instructions */}
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">
-              Custom Penetration Testing Instructions (Optional)
-            </label>
-            <textarea
-              rows={2}
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              placeholder="e.g. Focus on IDOR, SQL injection, and authorization weaknesses."
-              className="w-full bg-[#141b29] border border-[#222d42] rounded-lg p-3 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          {/* Budget & Turns */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Max Budget (USD, Optional)</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={maxBudget || ''}
-                onChange={(e) => setMaxBudget(e.target.value ? parseFloat(e.target.value) : undefined)}
-                placeholder="Unlimited"
-                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
-              />
+        {/* Step 4: CLI Preview */}
+        <TerminalPane title="CLI_COMMAND_PREVIEW" prefix="PREVIEW">
+          <div className="space-y-2">
+            <div className="bg-[#050c05] border border-[#1f521f] p-2.5 font-mono text-xs text-[#33ff00] break-all select-all flex items-start justify-between">
+              <span>{estimatedCommand}</span>
             </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Max Turns per Agent (Optional)</label>
-              <input
-                type="number"
-                min="10"
-                max="1000"
-                value={maxTurns || ''}
-                onChange={(e) => setMaxTurns(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-                placeholder="Default: 500"
-                className="w-full bg-[#141b29] border border-[#222d42] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
+            <p className="text-[10px] text-[#1f521f]">
+              // Subprocess invoked with safe list parameters (shell=False) inside Docker container.
+            </p>
           </div>
-        </div>
+        </TerminalPane>
 
-        {/* Authorization Acknowledgment (Strict Security Rule) */}
-        <div className="bg-amber-950/20 border border-amber-800/40 p-5 rounded-xl space-y-3">
-          <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm">
-            <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
-            Mandatory Authorization Notice
+        {/* Step 5: Mandatory Legal Authorization */}
+        <div className="border border-[#ffb000] bg-black p-3 space-y-2">
+          <div className="flex items-center space-x-2 text-[#ffb000] font-bold text-xs uppercase amber-glow">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-[#ffb000]" />
+            <span>LEGAL_AUTHORIZATION_CERTIFICATE</span>
           </div>
-          <p className="text-xs text-gray-300 leading-relaxed">
+          <p className="text-[11px] text-[#94a3b8] leading-relaxed">
             "Only scan applications and systems that you own or have explicit authorization to test."
-            Unauthorized security testing of external systems violates computer security laws and terms of service.
+            Unauthorized security testing of external systems violates computer fraud statutes and terms of service.
           </p>
-          <label className="flex items-center gap-3 pt-2 cursor-pointer">
+          <label htmlFor="auth-checkbox" className="flex items-center space-x-2 pt-1 cursor-pointer">
             <input
+              id="auth-checkbox"
               type="checkbox"
               checked={authorized}
               onChange={(e) => setAuthorized(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-700 text-blue-600 focus:ring-blue-500 bg-[#141b29]"
+              className="accent-[#33ff00] w-3.5 h-3.5 bg-black border-[#1f521f]"
             />
-            <span className="text-xs font-medium text-gray-200">
-              I acknowledge and confirm that I own or have explicit legal authorization to test this target.
+            <span className="text-xs text-[#33ff00] font-bold uppercase select-none">
+              [X] I CERTIFY THAT I HAVE EXPLICIT LEGAL AUTHORIZATION TO ASSESS THIS TARGET.
             </span>
           </label>
         </div>
 
-        {/* Submit Button */}
-        <div className="flex justify-end gap-3 pt-2">
+        {/* Action Controls */}
+        <div className="flex items-center justify-end space-x-3 pt-2">
           <button
             type="button"
             onClick={() => onNavigate('dashboard')}
-            className="px-5 py-2.5 rounded-lg border border-[#222d42] text-gray-400 hover:text-gray-200 text-sm font-medium transition-colors"
+            className="btn-terminal"
           >
-            Cancel
+            [ ABORT / CANCEL ]
           </button>
           <button
             type="submit"
             disabled={!authorized || submitting}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
+            className={
               authorized && !submitting
-                ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20 cursor-pointer'
-                : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700/50'
-            }`}
+                ? 'btn-terminal font-bold terminal-invert'
+                : 'btn-terminal opacity-50 cursor-not-allowed border-[#1f521f] text-[#1f521f] bg-black'
+            }
           >
             {submitting ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Initializing Strix Scan...
-              </>
+              <span>[ INITIALIZING_STRIX_DAEMON... ]</span>
             ) : (
-              <>
-                <Play className="w-4 h-4 fill-current" />
-                Start Strix Security Assessment
-              </>
+              <span>[&gt; INITIATE_STRIX_ASSESSMENT]</span>
             )}
           </button>
         </div>
@@ -336,3 +435,5 @@ export const NewScan: React.FC<Props> = ({ onNavigate }) => {
     </div>
   );
 };
+
+export default NewScan;

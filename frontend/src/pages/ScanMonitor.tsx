@@ -1,19 +1,22 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  Activity,
+  Terminal,
   AlertTriangle,
   StopCircle,
   Copy,
   Check,
   Clock,
   Cpu,
-  Layers,
   FileText,
-  Terminal,
+  ArrowLeft,
 } from 'lucide-react';
 import { Scan, ScanLog } from '../types';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/StatusBadge';
+import { useToast } from '../context/ToastContext';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { TerminalPane } from '../components/TerminalPane';
+import { EmptyState } from '../components/EmptyState';
 
 interface Props {
   scanId: string;
@@ -21,10 +24,12 @@ interface Props {
 }
 
 export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
+  const { addToast } = useToast();
   const [scan, setScan] = useState<Scan | null>(null);
   const [logs, setLogs] = useState<ScanLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [copied, setCopied] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -35,7 +40,7 @@ export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
       setScan(s);
       const l = await api.getScanLogs(scanId);
       setLogs(l);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching scan data:', err);
     } finally {
       setLoading(false);
@@ -44,7 +49,6 @@ export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
 
   useEffect(() => {
     fetchScan();
-    // Poll every 2.5 seconds while active
     const interval = setInterval(() => {
       if (!scan || scan.status === 'Running' || scan.status === 'Starting') {
         fetchScan();
@@ -60,14 +64,15 @@ export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
     }
   }, [logs, autoScroll]);
 
-  const handleCancel = async () => {
-    if (!confirm('Are you sure you want to stop this Strix scan?')) return;
+  const handleConfirmCancel = async () => {
+    setShowCancelModal(false);
     try {
       setCancelling(true);
       await api.cancelScan(scanId);
+      addToast('[SYS_SIGINT] Scan cancellation sent to Strix daemon.', 'info');
       await fetchScan();
     } catch (err: any) {
-      alert(err.message || 'Failed to cancel scan');
+      addToast(err.message || 'Failed to abort scan.', 'error');
     } finally {
       setCancelling(false);
     }
@@ -77,23 +82,31 @@ export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
     const text = logs.map((l) => `[${l.timestamp}] [${l.level}] ${l.message}`).join('\n');
     navigator.clipboard.writeText(text);
     setCopied(true);
+    addToast('[BUFFER_COPIED] Terminal logs copied to clipboard.', 'info');
     setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading && !scan) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-400">
-        <Activity className="w-6 h-6 animate-spin mr-2 text-blue-500" />
-        <span>Loading scan telemetry...</span>
+      <div className="space-y-4 font-mono text-xs">
+        <TerminalPane title="STREAM_INIT" prefix="TTY">
+          <div className="flex items-center justify-center py-12 text-[#33ff00]">
+            <span className="animate-pulse">&gt; CONNECTING_TO_STRIX_SUBPROCESS_STREAM...</span>
+            <span className="cursor-block ml-2" />
+          </div>
+        </TerminalPane>
       </div>
     );
   }
 
   if (!scan) {
     return (
-      <div className="p-6 bg-red-950/30 border border-red-800/50 rounded-lg text-red-300">
-        Scan not found.
-      </div>
+      <EmptyState
+        title="SCAN_NOT_FOUND"
+        description="The requested scan ID does not exist in local database or was removed."
+        actionLabel="ALL_SCANS"
+        onAction={() => onNavigate('scans')}
+      />
     );
   }
 
@@ -106,157 +119,185 @@ export const ScanMonitor: React.FC<Props> = ({ scanId, onNavigate }) => {
   const isRunning = scan.status === 'Running' || scan.status === 'Starting';
 
   return (
-    <div className="space-y-6">
-      {/* Scan Summary Header */}
-      <div className="bg-[#111726] border border-[#1d273a] p-5 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-gray-100">
-              Scan: {scan.strix_run_name || scan.id.slice(0, 8)}
-            </h2>
-            <StatusBadge status={scan.status} />
-          </div>
-          <div className="text-xs font-mono text-gray-400 mt-1 max-w-xl truncate">
-            Target: <span className="text-blue-400">{scan.target_value}</span> ({scan.target_type})
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {isRunning && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-950/80 border border-red-800/60 text-red-300 text-xs font-medium transition-colors"
-            >
-              <StopCircle className="w-4 h-4" />
-              {cancelling ? 'Stopping...' : 'Cancel Scan'}
-            </button>
-          )}
-
-          {scan.findings_count > 0 && (
-            <button
-              onClick={() => onNavigate('findings', scan.id)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors shadow-md shadow-blue-600/20"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              View Findings ({scan.findings_count})
-            </button>
-          )}
-
-          <button
-            onClick={() => onNavigate('reports', scan.id)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1a2233] hover:bg-[#232e44] border border-[#2b3952] text-gray-200 text-xs font-medium transition-colors"
-          >
-            <FileText className="w-4 h-4 text-gray-400" />
-            Generate Report
-          </button>
-        </div>
+    <div className="space-y-4 font-mono text-xs">
+      {/* Return button */}
+      <div>
+        <button
+          onClick={() => onNavigate('history')}
+          className="text-[#94a3b8] hover:text-[#33ff00] text-xs transition-colors"
+        >
+          &lt;-- [RETURN_TO_SCAN_HISTORY]
+        </button>
       </div>
 
-      {/* Meta Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs text-gray-400 uppercase tracking-wider">Elapsed Time</div>
-          <div className="text-xl font-bold font-mono text-gray-100 mt-1 flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-blue-400" />
-            {formatElapsed(scan.elapsed_seconds)}
-          </div>
-        </div>
-
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs text-gray-400 uppercase tracking-wider">Scan Mode</div>
-          <div className="text-xl font-bold uppercase text-blue-400 mt-1">{scan.scan_mode}</div>
-        </div>
-
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs text-gray-400 uppercase tracking-wider">LLM Provider</div>
-          <div className="text-xl font-bold font-mono text-purple-400 mt-1 flex items-center gap-1.5">
-            <Cpu className="w-4 h-4" />
-            {scan.provider_used}
-          </div>
-        </div>
-
-        <div className="bg-[#111726] border border-[#1d273a] p-4 rounded-lg">
-          <div className="text-xs text-gray-400 uppercase tracking-wider">Findings Total</div>
-          <div className="text-xl font-bold text-gray-100 mt-1">{scan.findings_count}</div>
-        </div>
-      </div>
-
-      {/* Live Log Stream Viewer */}
-      <div className="bg-[#0b0e14] border border-[#1d273a] rounded-xl overflow-hidden shadow-2xl">
-        {/* Terminal Header */}
-        <div className="bg-[#0f1420] px-4 py-2.5 border-b border-[#1d273a] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-mono text-gray-300 font-semibold">
-              Live Strix Subprocess Log Output
-            </span>
+      {/* Main Status Header Pane */}
+      <TerminalPane
+        title={`SESSION: ${scan.strix_run_name || scan.id.slice(0, 8)}`}
+        prefix="MONITOR"
+        badge={<StatusBadge status={scan.status} />}
+        headerAction={
+          <div className="flex items-center space-x-2">
             {isRunning && (
-              <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-sans ml-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Live Stream
-              </span>
+              <button
+                onClick={() => setShowCancelModal(true)}
+                disabled={cancelling}
+                className="btn-terminal-danger text-[10px] py-0.5 px-2"
+              >
+                [X ABORT_SCAN]
+              </button>
             )}
-          </div>
 
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+            {scan.findings_count > 0 && (
+              <button
+                onClick={() => onNavigate('findings', scan.id)}
+                className="btn-terminal-amber text-[10px] py-0.5 px-2 font-bold"
+              >
+                [? FINDINGS: {scan.findings_count}]
+              </button>
+            )}
+
+            <button
+              onClick={() => onNavigate('reports', scan.id)}
+              className="btn-terminal text-[10px] py-0.5 px-2"
+            >
+              [# AUDIT_REPORT]
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-1">
+          <div className="text-[#33ff00] font-bold text-xs truncate">
+            TARGET_URI: <span className="text-[#94a3b8] font-normal">{scan.target_value}</span>
+          </div>
+          <div className="text-[10px] text-[#1f521f]">
+            VECTOR_TYPE: [{scan.target_type}] // RUN_UUID: [{scan.id}]
+          </div>
+        </div>
+      </TerminalPane>
+
+      {/* Telemetry Metric Readouts */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="border border-[#1f521f] bg-black p-3">
+          <div className="text-[10px] text-[#94a3b8] uppercase">ELAPSED_CLOCK</div>
+          <div className="text-lg font-bold text-[#33ff00] mt-1 flex items-center space-x-1.5 terminal-glow">
+            <Clock className="w-3.5 h-3.5 text-[#33ff00]" />
+            <span>{formatElapsed(scan.elapsed_seconds)}</span>
+          </div>
+        </div>
+
+        <div className="border border-[#1f521f] bg-black p-3">
+          <div className="text-[10px] text-[#94a3b8] uppercase">ASSESSMENT_MODE</div>
+          <div className="text-lg font-bold uppercase text-[#33ff00] mt-1">
+            [{scan.scan_mode}]
+          </div>
+        </div>
+
+        <div className="border border-[#1f521f] bg-black p-3">
+          <div className="text-[10px] text-[#94a3b8] uppercase">ACTIVE_LLM</div>
+          <div className="text-lg font-bold text-[#ffb000] mt-1 amber-glow flex items-center space-x-1.5">
+            <Cpu className="w-3.5 h-3.5 text-[#ffb000]" />
+            <span>{scan.provider_used}</span>
+          </div>
+        </div>
+
+        <div className={`border p-3 bg-black ${scan.findings_count > 0 ? 'border-[#ff3333]' : 'border-[#1f521f]'}`}>
+          <div className="text-[10px] text-[#94a3b8] uppercase">CONFIRMED_FINDINGS</div>
+          <div className={`text-lg font-bold mt-1 ${scan.findings_count > 0 ? 'text-[#ff3333] error-glow' : 'text-[#33ff00]'}`}>
+            [{scan.findings_count}]
+          </div>
+        </div>
+      </div>
+
+      {/* Terminal Live Stream Window */}
+      <TerminalPane
+        title="STRIX_SUBPROCESS_TTY"
+        prefix="STDOUT"
+        glow={isRunning}
+        headerAction={
+          <div className="flex items-center space-x-3 text-[11px]">
+            <label className="flex items-center space-x-1.5 cursor-pointer text-[#94a3b8] hover:text-[#33ff00]">
               <input
                 type="checkbox"
                 checked={autoScroll}
                 onChange={(e) => setAutoScroll(e.target.checked)}
-                className="w-3.5 h-3.5 rounded text-blue-600 bg-gray-800 border-gray-700"
+                className="accent-[#33ff00]"
               />
-              Auto-scroll
+              <span className="uppercase text-[10px]">[AUTO_SCROLL]</span>
             </label>
 
             <button
               onClick={handleCopyLogs}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-[#161e2e] border border-[#232f44] transition-colors"
+              className="btn-terminal text-[10px] py-0.5 px-2"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied' : 'Copy'}</span>
+              {copied ? '[COPIED]' : '[COPY_BUFFER]'}
             </button>
           </div>
-        </div>
-
-        {/* Terminal Content */}
-        <div className="p-4 h-[450px] overflow-y-auto font-mono text-xs text-gray-300 space-y-1 bg-[#090c12]">
+        }
+      >
+        <div
+          role="region"
+          aria-label="Terminal stdout stream"
+          className="h-[480px] overflow-y-auto font-mono text-xs select-text space-y-0.5 pr-2 bg-black"
+        >
           {logs.length === 0 ? (
-            <div className="text-gray-500 italic py-8 text-center">
-              Waiting for Strix output stream...
+            <div className="py-16 text-center space-y-2">
+              <div className="text-[#33ff00] font-bold terminal-glow">
+                :: STRIX SECURITY ENGINE INITIATING ::
+              </div>
+              <div className="text-[#1f521f] text-xs">
+                $ strix --target &quot;{scan.target_value}&quot; --scan-mode {scan.scan_mode} --non-interactive
+              </div>
+              <div className="text-[#94a3b8] text-[11px] pt-2 flex items-center justify-center space-x-2">
+                <span className="w-1.5 h-1.5 bg-[#33ff00] animate-ping" />
+                <span>SPAWNING SUBPROCESS IN DOCKER SANDBOX...</span>
+              </div>
             </div>
           ) : (
             logs.map((log) => {
-              let color = 'text-gray-300';
-              if (log.level === 'ERROR') color = 'text-red-400';
-              else if (log.level === 'WARNING') color = 'text-amber-400';
-              else if (log.source === 'runner') color = 'text-blue-300';
+              const msg = log.message;
+              const isBorder = msg.startsWith('+-') || msg.startsWith('|') || msg.startsWith('+---') || msg.startsWith('┌') || msg.startsWith('└') || msg.startsWith('│');
+              const isWarning = log.level === 'WARNING' || msg.includes('WARNING') || msg.includes('WARN');
+              const isError = log.level === 'ERROR' || msg.toLowerCase().includes('error:') || msg.toLowerCase().includes('traceback') || msg.toLowerCase().includes('failed');
+              const isSuccess = msg.toLowerCase().includes('completed successfully') || msg.toLowerCase().includes('succeeded') || msg.includes('Penetration test completed');
+
+              let lineClass = 'text-[#33ff00]';
+              if (isError) lineClass = 'text-[#ff3333] font-bold error-glow';
+              else if (isWarning) lineClass = 'text-[#ffb000] font-bold amber-glow';
+              else if (isSuccess) lineClass = 'text-[#33ff00] font-bold terminal-glow';
+              else if (isBorder) lineClass = 'text-[#1f521f] font-mono select-none';
 
               const timeStr = log.timestamp.split('T')[1]?.slice(0, 8) || '';
 
               return (
-                <div key={log.id} className="leading-relaxed hover:bg-[#111726]/60 px-1 rounded flex gap-2">
-                  <span className="text-gray-600 select-none shrink-0">{timeStr}</span>
-                  <span
-                    className={`shrink-0 text-[10px] font-bold px-1 rounded select-none ${
-                      log.level === 'ERROR'
-                        ? 'bg-red-950 text-red-400'
-                        : log.level === 'WARNING'
-                        ? 'bg-amber-950 text-amber-400'
-                        : 'text-gray-500'
-                    }`}
-                  >
-                    {log.level}
+                <div
+                  key={log.id}
+                  className="leading-snug hover:bg-[#0d220d]/60 px-1 py-0.2 flex space-x-2 font-mono whitespace-pre-wrap break-all"
+                >
+                  <span className="text-[#1f521f] select-none shrink-0 text-[10px]">
+                    {timeStr}
                   </span>
-                  <span className={`${color} break-all`}>{log.message}</span>
+                  <span className={`${lineClass} flex-1`}>{msg}</span>
                 </div>
               );
             })
           )}
           <div ref={logEndRef} />
         </div>
-      </div>
+      </TerminalPane>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showCancelModal}
+        title="TERMINATE_STRIX_PROCESS"
+        message="Terminate active penetration test? Subprocess will receive SIGINT and partial telemetry will be saved."
+        confirmText="TERMINATE"
+        cancelText="ABORT"
+        isDanger={true}
+        onConfirm={handleConfirmCancel}
+        onCancel={() => setShowCancelModal(false)}
+      />
     </div>
   );
 };
+
+export default ScanMonitor;

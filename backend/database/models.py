@@ -6,7 +6,7 @@ SQLAlchemy database models for the AI Security Testing Platform.
 # Foreign Key — creates a relationship linking one table's rows to another table's rows.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 import uuid
 
@@ -31,6 +31,11 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def utc_now() -> datetime:
+    """Return timezone-aware UTC datetime."""
+    return datetime.now(timezone.utc)
+
+
 class Project(Base):
     """
     Represents an authorized project or application under test.
@@ -42,8 +47,8 @@ class Project(Base):
     description = Column(Text, nullable=True)
     target_type = Column(String(50), nullable=False)  # local_project, github_repo, web_app, api_spec
     target_value = Column(String(1024), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     scans = relationship("Scan", back_populates="project", cascade="all, delete-orphan")
@@ -115,14 +120,21 @@ class Finding(Base):
     # Status: Open, Confirmed, Fixed, Accepted Risk, Retest Required
     status = Column(String(50), default="Open", index=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     scan = relationship("Scan", back_populates="findings")
     project = relationship("Project", back_populates="findings")
     notes = relationship("FindingNote", back_populates="finding", cascade="all, delete-orphan")
     retests = relationship("RetestHistory", back_populates="finding", cascade="all, delete-orphan")
+
+    @property
+    def target(self) -> Optional[str]:
+        if self.scan:
+            return self.scan.target_value
+        return None
+
 
 
 class ScanLog(Base):
@@ -133,7 +145,7 @@ class ScanLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     scan_id = Column(String(36), ForeignKey("scans.id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utc_now)
     level = Column(String(20), default="INFO")
     message = Column(Text, nullable=False)
     source = Column(String(50), default="strix")  # strix, runner, backend
@@ -185,7 +197,7 @@ class Report(Base):
     title = Column(String(255), nullable=False)
     report_format = Column(String(20), nullable=False)  # html, pdf, json
     file_path = Column(String(1024), nullable=False)
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=utc_now)
 
     scan = relationship("Scan", back_populates="reports")
 
@@ -200,7 +212,7 @@ class FindingNote(Base):
     finding_id = Column(String(36), ForeignKey("findings.id"), nullable=False, index=True)
     author = Column(String(100), default="Security Analyst")
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     finding = relationship("Finding", back_populates="notes")
 
@@ -220,6 +232,6 @@ class RetestHistory(Base):
     # Result: Resolved, Still Present, Changed, Unable to Verify
     result = Column(String(50), nullable=False)
     notes = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utc_now)
 
     finding = relationship("Finding", back_populates="retests")

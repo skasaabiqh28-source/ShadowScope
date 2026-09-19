@@ -162,6 +162,20 @@ export const api = {
       }
     ),
 
+  deleteScan: (id: string) => request<{ message: string; scan_id: string }>(`/scans/${id}`, { method: 'DELETE' }),
+
+  retestScan: (id: string, instruction?: string, scan_mode?: string) =>
+    request<Scan>(`/scans/${id}/retest`, {
+      method: 'POST',
+      body: JSON.stringify({ instruction, scan_mode }),
+    }),
+
+  // Projects
+  listProjects: () => request<any[]>('/projects'),
+  getProject: (id: string) => request<any>(`/projects/${id}`),
+  createProject: (data: { name: string; target_type: string; target_value: string; description?: string }) =>
+    request<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+
   // Training Labs
   listTrainingLabs: () => request<TrainingLab[]>('/labs'),
 
@@ -184,4 +198,16 @@ export const api = {
 
   // System Settings
   getSettings: () => request<SystemSettings>('/settings'),
+
+  updateSettings: (data: Partial<SystemSettings>) =>
+    request<SystemSettings>('/settings', { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Attack Path Manual Edge
+  addAttackPathEdge: (scanId: string, sourceId: string, targetId: string, relationType = 'chains_to', evidence?: string) =>
+    request<{ message: string; edge_id: string }>(`/attack-paths/${scanId}/edges`, {
+      method: 'POST',
+      body: JSON.stringify({ source_id: sourceId, target_id: targetId, relation_type: relationType, evidence }),
+    }),
+
+  getReport: (id: string) => request<ReportItem>(`/reports/${id}`),
 };

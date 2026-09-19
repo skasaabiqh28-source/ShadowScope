@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Bot,
   Send,
@@ -8,9 +8,12 @@ import {
   HelpCircle,
   Cpu,
   CornerDownLeft,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Finding, Scan } from '../types';
+import { useToast } from '../context/ToastContext';
 
 interface Props {
   initialFindingId?: string;
@@ -26,6 +29,7 @@ interface ChatMessage {
 }
 
 export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
+  const { addToast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -37,20 +41,27 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [selectedFindingId, setSelectedFindingId] = useState<string>(initialFindingId || '');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
         const list = await api.listFindings();
         setFindings(list);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error loading findings for assistant:', err);
       }
     };
     load();
   }, []);
+
+  // Auto-scroll to bottom of chat
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   const handleSend = async (queryText?: string) => {
     const textToSend = queryText || input;
@@ -91,9 +102,17 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
         timestamp: new Date().toLocaleTimeString(),
       };
       setMessages((prev) => [...prev, errorMsg]);
+      addToast('Failed to receive response from assistant', 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyMessage = (msgId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(msgId);
+    addToast('Response copied to clipboard', 'info');
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const quickPrompts = [
@@ -119,8 +138,9 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
 
         {/* Optional Finding Context Selector */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 shrink-0">Context:</span>
+          <label htmlFor="context-finding-select" className="text-xs text-gray-400 shrink-0">Context:</label>
           <select
+            id="context-finding-select"
             value={selectedFindingId}
             onChange={(e) => setSelectedFindingId(e.target.value)}
             className="bg-[#151c2a] border border-[#222c3d] text-gray-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-blue-500 font-mono max-w-xs truncate"
@@ -136,7 +156,12 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
       </div>
 
       {/* Messages Thread */}
-      <div className="flex-1 bg-[#0b0e14] border border-[#1d273a] rounded-xl p-4 overflow-y-auto space-y-4">
+      <div
+        role="log"
+        aria-live="polite"
+        aria-label="Security Assistant Conversation"
+        className="flex-1 bg-[#0b0e14] border border-[#1d273a] rounded-xl p-4 overflow-y-auto space-y-4"
+      >
         {messages.map((m) => {
           const isUser = m.sender === 'user';
           return (
@@ -157,13 +182,27 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
               </div>
 
               <div
-                className={`p-3.5 rounded-xl text-xs max-w-2xl leading-relaxed whitespace-pre-wrap ${
+                className={`relative group p-3.5 rounded-xl text-xs max-w-2xl leading-relaxed whitespace-pre-wrap ${
                   isUser
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : 'bg-[#121826] border border-[#1e273b] text-gray-200 rounded-tl-none'
                 }`}
               >
                 {m.text}
+
+                {!isUser && m.sender === 'assistant' && (
+                  <button
+                    onClick={() => handleCopyMessage(m.id, m.text)}
+                    aria-label="Copy assistant answer"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-[#1c2438] hover:bg-[#25304a] text-gray-400 hover:text-gray-200"
+                  >
+                    {copiedId === m.id ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -175,6 +214,7 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
             <span>Analyzing scan telemetry & generating response...</span>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Quick Prompts Bar */}
@@ -183,7 +223,7 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
           <button
             key={idx}
             onClick={() => handleSend(qp)}
-            className="text-[11px] px-2.5 py-1 rounded-full bg-[#121824] hover:bg-[#1a2333] border border-[#1f2838] text-gray-300 transition-colors"
+            className="text-[11px] px-2.5 py-1 rounded-full bg-[#121824] hover:bg-[#1a2333] border border-[#1f2838] text-gray-300 transition-colors focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             {qp}
           </button>
@@ -198,7 +238,9 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
         }}
         className="flex gap-2 shrink-0"
       >
+        <label htmlFor="assistant-chat-input" className="sr-only">Ask question to security assistant</label>
         <input
+          id="assistant-chat-input"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -208,7 +250,8 @@ export const SecurityAssistant: React.FC<Props> = ({ initialFindingId }) => {
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white text-xs font-medium rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-blue-600/20"
+          aria-label="Send message"
+          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white text-xs font-medium rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-blue-600/20 focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           <Send className="w-3.5 h-3.5" />
           <span>Send</span>
