@@ -1,0 +1,61 @@
+# ============================================================
+# ShadowScopeAI
+# ============================================================
+
+# ----- Python / Backend -----
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# ----- Node / Frontend -----
+node_modules/
+frontend/dist/
+frontend/.cache/
+.turbo/
+
+# ----- IDE / Editor -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ----- Environment & Secrets -----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ----- Database -----
+*.db
+*.db-journal
+*.sqlite3
+
+# ----- Strix & Scan Artifacts -----
+strix_runs/
+reports/
+
+# ----- Testing -----
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ----- Misc -----
+*.log
+*.bak
+*.tmp
